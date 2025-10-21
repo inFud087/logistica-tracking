@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sistema Logística v10</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-slate-100">
+    <div id="app"></div>
+
+    <script>
+        // ============================================================================
+        // STORE START
+        // ============================================================================
+        
+        const STORAGE_KEY = 'lts_store';
+        const CURRENT_VERSION = 1;
+
+        // Utilidad: generar UUID
+        function uuid() {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            // Fallback simple
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Utilidad: obtener timestamp ISO
+        function now() {
+            return new Date().toISOString();
+        }
+
+        // Store: funciones principales
+        const Store = {
+            // Cargar desde localStorage y migrar si es necesario
+            load() {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) {
+                    // Crear store vacío con versión 1
+                    return this._createEmptyStore();
+                }
+                
+                try {
+                    const data = JSON.parse(raw);
+                    return this._migrateIfNeeded(data);
+                } catch (e) {
+                    console.error('Error al cargar store:', e);
+                    return this._createEmptyStore();
+                }
+            },
+
+            // Guardar en localStorage
+            save(store) {
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+                } catch (e) {
+                    console.error('Error al guardar store:', e);
+                    alert('Error al guardar datos: ' + e.message);
+                }
+            },
+
+            // Crear store vacío
+            _createEmptyStore() {
+                return {
+                    schemaVersion: CURRENT_VERSION,
+                    items: [],
+                    locations: [],
+                    inventory: [],
+                    movements: [],
+                    users: {
+                        admin: { password: 'admin123', role: 'admin', nombre_completo: 'Administrador' },
+                        operario: { password: 'oper123', role: 'user', nombre_completo: 'Operario 1' }
+                    }
+                };
+            },
+
+            // Sistema de migraciones (preparado para futuras versiones)
+            _migrateIfNeeded(data) {
+                if (!data.schemaVersion) {
+                    data.schemaVersion = 1;
+                }
+
+                let currentData = data;
+                
+                // Cadena de migraciones: v1 → v2 → v3 ...
+                // while (currentData.schemaVersion < CURRENT_VERSION) {
+                //     if (currentData.schemaVersion === 1) {
+                //         currentData = this._migrateV1toV2(currentData);
+                //     }
+                //     // Agregar más migraciones aquí en el futuro
+                // }
+
+                // Asegurar que existan las estructuras necesarias
+                if (!currentData.items) currentData.items = [];
+                if (!currentData.locations) currentData.locations = [];
+                if (!currentData.inventory) currentData.inventory = [];
+                if (!currentData.movements) currentData.movements = [];
+                if (!currentData.users) {
+                    currentData.users = {
+                        admin: { password: 'admin123', role: 'admin', nombre_completo: 'Administrador' },
+                        operario: { password: 'oper123', role: 'user', nombre_completo: 'Operario 1' }
+                    };
+                }
+
+                return currentData;
+            },
+
+            // Ejemplo de migración futura (comentado para referencia)
+            // _migrateV1toV2(data) {
+            //     return {
+            //         ...data,
+            //         schemaVersion: 2,
+            //         // Transformaciones necesarias
+            //     };
+            // },
+
+            // Crear o actualizar item
+            upsertItem(store, code, description) {
+                let item = store.items.find(i => i.code === code);
+                if (!item) {
+                    item = { id: uuid(), code, description: description || '' };
+                    store.items.push(item);
+                } else if (description) {
+                    item.description = description;
+                }
+                return item;
+            },
+
+            // Crear o actualizar ubicación
+            upsertLocation(store, qr, module, row, col) {
+                let location = store.locations.find(l => l.qr === qr);
+                if (!location) {
+                    location = { 
+                        id: uuid(), 
+                        qr, 
+                        module: module || 'M?', 
+                        row: row || 'F?', 
+                        col: col || 'C?' 
+                    };
+                    store.locations.push(location);
+                } else {
+                    // Actualizar si tenemos más info
+                    if (module && module !== 'M?') location.module = module;
+                    if (row && row !== 'F?') location.row = row;
+                    if (col && col !== 'C?') location.col = col;
+                }
+                return location;
+            },
+
+            // Obtener inventario filtrado
+            getInventory(store, itemCode, locationQR) {
+                let results = [];
+                
+                for (const invRow of store.inventory) {
+                    const item = store.items.find(i => i.id === invRow.itemId);
+                    const location = store.locations.find(l => l.id === invRow.locationId);
+                    
+                    if (!item || !location) continue;
+                    
+                    // Filtrar por item si se especifica
+                    if (itemCode && item.code !== itemCode) continue;
+                    
+                    // Filtrar por ubicación si se especifica
+                    if (locationQR && location.qr !== locationQR) continue;
+                    
+                    results.push({
+                        id: invRow.id,
+                        itemCode: item.code,
+                        itemDescription: item.description,
+                        locationQR: location.qr,
+                        locationDisplay: `${location.module}-${location.row}-${location.col}`,
+                        quantity: invRow.quantity
+                    });
+                }
+                
+                return results;
+            },
+
+            // Agregar stock (entrada)
+            addStock(store, itemCode, locationQR, qty, workOrderCode) {
+                if (qty <= 0) return;
+
+                const item = this.upsertItem(store, itemCode);
+                const location = this.upsertLocation(store, locationQR);
+                
+                // Buscar o crear registro de inventario
+                let invRow = store.inventory.find(
+                    inv => inv.itemId === item.id && inv.locationId === location.id
+                );
+                
+                if (invRow) {
+                    invRow.quantity += qty;
+                } else {
+                    invRow = {
+                        id: uuid(),
+                        itemId: item.id,
+                        locationId: location.id,
+                        quantity: qty
+                    };
+                    store.inventory.push(invRow);
+                }
+
+                // Registrar movimiento
+                store.movements.push({
+                    id: uuid(),
+                    itemCode: itemCode,
+                    fromLocationQR: null,
+                    toLocationQR: locationQR,
+                    quantity: qty,
+                    type: 'IN',
+                    workOrderCode: workOrderCode || null,
+                    createdAt: now(),
+                    createdBy: state.currentUser ? state.currentUser.username : 'unknown',
+                    clientUuid: uuid()
+                });
+            },
+
+            // Retirar stock de múltiples ubicaciones (salida)
+            removeStockSplit(store, itemCode, picks) {
+                const item = store.items.find(i => i.code === itemCode);
+                if (!item) {
+                    throw new Error('Item no encontrado');
+                }
+
+                for (const pick of picks) {
+                    const location = store.locations.find(l => l.qr === pick.locationQR);
+                    if (!location) continue;
+
+                    const invRow = store.inventory.find(
+                        inv => inv.itemId === item.id && inv.locationId === location.id
+                    );
+
+                    if (!invRow || invRow.quantity < pick.quantity) {
+                        throw new Error(`Stock insuficiente en ${pick.locationQR}`);
+                    }
+
+                    // Descontar
+                    invRow.quantity -= pick.quantity;
+
+                    // Si queda en 0, eliminar
+                    if (invRow.quantity === 0) {
+                        const idx = store.inventory.indexOf(invRow);
+                        if (idx > -1) store.inventory.splice(idx, 1);
+                    }
+
+                    // Registrar movimiento de salida
+                    store.movements.push({
+                        id: uuid(),
+                        itemCode: itemCode,
+                        fromLocationQR: pick.locationQR,
+                        toLocationQR: null,
+                        quantity: pick.quantity,
+                        type: 'OUT',
+                        createdAt: now(),
+                        createdBy: state.currentUser ? state.currentUser.username : 'unknown',
+                        clientUuid: uuid()
+                    });
+                }
+            }
+        };
+
+        // ============================================================================
+        // STORE END
+        // ============================================================================
+
+        // Estado global de la UI
+        const state = {
+            store: Store.load(), // Cargar store al inicio
+            isAuthenticated: false,
+            currentUser: null,
+            activeTab: 'inicio',
+            historialFiltro: 'general',
+            historialBusqueda: '',
+            buscarPor: 'pieza'
+        };
+
+        let html5QrCode = null;
+        let currentInputId = null;
+
+        // ============================================================================
+        // FUNCIONES DE EXPORTAR/IMPORTAR
+        // ============================================================================
+
+        function exportarJSON() {
+            const data = localStorage.getItem(STORAGE_KEY) || '{}';
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const fileName = `logistica-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+            a.href = url;
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function importarJSON(file) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const json = JSON.parse(String(reader.result));
+                    if (!json || typeof json !== 'object' || !json.schemaVersion) {
+                        throw new Error('Archivo inválido');
+                    }
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(json));
+                    alert('Datos importados. Recargando la página...');
+                    location.reload();
+                } catch (e) {
+                    alert('No se pudo importar: ' + (e && e.message ? e.message : e));
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function triggerImport() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'application/json';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) importarJSON(file);
+            };
+            input.click();
+        }
+
+        // ============================================================================
+        // FUNCIONES DE LOGIN Y AUTENTICACIÓN
+        // ============================================================================
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (state.store.users[username] && state.store.users[username].password === password) {
+                state.currentUser = { username, ...state.store.users[username] };
+                state.isAuthenticated = true;
+                render();
+            } else {
+                alert('Usuario o contraseña incorrectos');
+            }
+        }
+
+        // ============================================================================
+        // FUNCIONES DEL ESCÁNER QR
+        // ============================================================================
+
+        function iniciarScanner(inputId) {
+            currentInputId = inputId;
+            document.getElementById('scannerModal').classList.remove('hidden');
+            
+            setTimeout(() => {
+                html5QrCode = new Html5Qrcode("qr-reader");
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    (decodedText) => {
+                        const input = document.getElementById(currentInputId);
+                        input.value = decodedText;
+                        
+                        // Efecto visual: borde verde por 2 segundos
+                        input.classList.add('border-green-500', 'border-4');
+                        setTimeout(() => {
+                            input.classList.remove('border-green-500', 'border-4');
+                        }, 2000);
+                        
+                        cerrarScanner();
+                        
+                        // Actualizar vistas según el input
+                        if (currentInputId === 'entradaPieza') {
+                            actualizarAlertaUbicaciones();
+                        }
+                        if (currentInputId === 'salidaPieza') {
+                            mostrarUbicacionesDisponibles();
+                        }
+                        if (currentInputId === 'busquedaPieza' || currentInputId === 'busquedaUbicacion') {
+                            buscarInventario();
+                        }
+                    }
+                ).catch((err) => {
+                    alert('Error: No se puede acceder a la cámara.\n\nAsegúrate de dar permisos.');
+                    cerrarScanner();
+                });
+            }, 100);
+        }
+
+        function cerrarScanner() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    html5QrCode.clear();
+                    html5QrCode = null;
+                    document.getElementById('scannerModal').classList.add('hidden');
+                }).catch(() => {
+                    html5QrCode = null;
+                    document.getElementById('scannerModal').classList.add('hidden');
+                });
+            } else {
+                document.getElementById('scannerModal').classList.add('hidden');
+            }
+        }
+
+        // ============================================================================
+        // HOOK START: ENTRADA
+        // ============================================================================
+
+        function actualizarAlertaUbicaciones() {
+            const pieza = document.getElementById('entradaPieza').value.trim();
+            const alertaDiv = document.getElementById('alertaUbicaciones');
+            
+            if (!pieza) {
+                alertaDiv.innerHTML = '';
+                return;
+            }
+            
+            const ubicaciones = Store.getInventory(state.store, pieza);
+            
+            if (ubicaciones.length > 0) {
+                alertaDiv.innerHTML = `
+                    <div class="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                        <p class="font-bold text-sm text-amber-800">⚠️ Pieza con ubicaciones existentes:</p>
+                        ${ubicaciones.map(u => `<p class="text-sm text-amber-700">${u.locationQR}: ${u.quantity} uds</p>`).join('')}
+                    </div>
+                `;
+            } else {
+                alertaDiv.innerHTML = '';
+            }
+        }
+
+        function procesarEntrada() {
+            const pieza = document.getElementById('entradaPieza').value.trim();
+            const orden = document.getElementById('entradaOrden').value.trim();
+            const ubicacion = document.getElementById('entradaUbicacion').value.trim();
+            const cantidad = parseInt(document.getElementById('entradaCantidad').value);
+
+            if (!pieza || !ubicacion || !cantidad) {
+                alert('⚠️ Completa los campos obligatorios:\n- Código de Pieza\n- Ubicación\n- Cantidad');
+                return;
+            }
+
+            try {
+                Store.addStock(state.store, pieza, ubicacion, cantidad, orden || null);
+                Store.save(state.store);
+                
+                alert('✅ Entrada registrada correctamente');
+                document.getElementById('entradaPieza').value = '';
+                document.getElementById('entradaOrden').value = '';
+                document.getElementById('entradaUbicacion').value = '';
+                document.getElementById('entradaCantidad').value = '';
+                render();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // ============================================================================
+        // HOOK END: ENTRADA
+        // ============================================================================
+
+        // ============================================================================
+        // HOOK START: SALIDA
+        // ============================================================================
+
+        function mostrarUbicacionesDisponibles() {
+            const pieza = document.getElementById('salidaPieza').value.trim();
+            const ubicacionesDiv = document.getElementById('ubicacionesDisponibles');
+            
+            if (!pieza) {
+                ubicacionesDiv.innerHTML = '';
+                return;
+            }
+            
+            const ubicaciones = Store.getInventory(state.store, pieza);
+            
+            if (ubicaciones.length === 0) {
+                ubicacionesDiv.innerHTML = `
+                    <div class="bg-rose-50 border-2 border-rose-200 rounded-xl p-4 text-center">
+                        <p class="text-rose-700 font-medium">No se encontró stock para esta pieza</p>
+                    </div>
+                `;
+                return;
+            }
+
+            ubicacionesDiv.innerHTML = `
+                <div class="space-y-3">
+                    <h3 class="font-bold text-slate-700">Ubicaciones Disponibles</h3>
+                    ${ubicaciones.map((item, index) => `
+                        <div class="bg-slate-50 border-2 border-slate-200 rounded-xl p-4">
+                            <p class="font-bold text-lg text-slate-800">${item.locationQR}</p>
+                            <p class="text-sm text-slate-600 mb-2">Disponible: ${item.quantity} uds</p>
+                            <input 
+                                type="number" 
+                                id="cantidadSalida_${index}" 
+                                data-ubicacion="${item.locationQR}"
+                                data-disponible="${item.quantity}"
+                                class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-rose-400 focus:outline-none" 
+                                placeholder="Cantidad a retirar"
+                                min="0"
+                                max="${item.quantity}">
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function procesarSalida() {
+            const pieza = document.getElementById('salidaPieza').value.trim();
+            
+            if (!pieza) {
+                alert('⚠️ Ingresa el código de pieza');
+                return;
+            }
+
+            const ubicaciones = Store.getInventory(state.store, pieza);
+            
+            if (ubicaciones.length === 0) {
+                alert('❌ No hay stock disponible para esta pieza');
+                return;
+            }
+
+            const picks = [];
+
+            ubicaciones.forEach((item, index) => {
+                const input = document.getElementById(`cantidadSalida_${index}`);
+                const cantidad = parseInt(input.value) || 0;
+                
+                if (cantidad > 0) {
+                    if (cantidad > item.quantity) {
+                        throw new Error(`En ${item.locationQR} solo hay ${item.quantity} uds disponibles`);
+                    }
+                    picks.push({
+                        locationQR: item.locationQR,
+                        quantity: cantidad
+                    });
+                }
+            });
+
+            if (picks.length === 0) {
+                alert('⚠️ Ingresa al menos una cantidad a retirar');
+                return;
+            }
+
+            try {
+                Store.removeStockSplit(state.store, pieza, picks);
+                Store.save(state.store);
+                
+                alert(`✅ Salida registrada correctamente\n${picks.length} ubicación(es) actualizada(s)`);
+                document.getElementById('salidaPieza').value = '';
+                render();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // ============================================================================
+        // HOOK END: SALIDA
+        // ============================================================================
+
+        // ============================================================================
+        // HOOK START: BUSCAR
+        // ============================================================================
+
+        function buscarInventario() {
+            const resultadosDiv = document.getElementById('resultadosBusqueda');
+            
+            let termino = '';
+            if (state.buscarPor === 'pieza') {
+                termino = document.getElementById('busquedaPieza')?.value.trim() || '';
+            } else {
+                termino = document.getElementById('busquedaUbicacion')?.value.trim() || '';
+            }
+            
+            if (!termino) {
+                resultadosDiv.innerHTML = '<p class="text-slate-500 text-center py-4">Ingresa un término de búsqueda</p>';
+                return;
+            }
+
+            let resultados = [];
+            if (state.buscarPor === 'pieza') {
+                resultados = Store.getInventory(state.store, termino);
+            } else {
+                resultados = Store.getInventory(state.store, undefined, termino);
+            }
+
+            if (resultados.length === 0) {
+                resultadosDiv.innerHTML = '<p class="text-slate-500 text-center py-4">No se encontraron resultados</p>';
+                return;
+            }
+
+            resultadosDiv.innerHTML = `
+                <div class="space-y-3">
+                    ${resultados.map(item => `
+                        <div class="bg-white border-2 border-blue-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                            <p class="font-bold text-lg text-slate-800">${item.itemCode}</p>
+                            <p class="text-sm text-slate-600">Ubicación: ${item.locationQR}</p>
+                            <p class="text-sm text-slate-600">Cantidad: ${item.quantity} uds</p>
+                            ${item.itemDescription ? `<p class="text-sm text-slate-600">${item.itemDescription}</p>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // ============================================================================
+        // HOOK END: BUSCAR
+        // ============================================================================
+
+        // ============================================================================
+        // HOOK START: HISTORIAL
+        // ============================================================================
+
+        function obtenerHistorial() {
+            let movimientos = [...state.store.movements];
+            
+            // Ordenar por fecha descendente
+            movimientos.sort((a, b) => {
+                return new Date(b.createdAt) - new Date(a.createdAt);
+            });
+            
+            // Filtrar por tipo
+            if (state.historialFiltro === 'entradas') {
+                movimientos = movimientos.filter(m => m.type === 'IN');
+            } else if (state.historialFiltro === 'salidas') {
+                movimientos = movimientos.filter(m => m.type === 'OUT');
+            }
+            
+            // Filtrar por búsqueda
+            if (state.historialBusqueda) {
+                const termino = state.historialBusqueda.toLowerCase();
+                movimientos = movimientos.filter(m => 
+                    m.itemCode.toLowerCase().includes(termino) ||
+                    (m.toLocationQR && m.toLocationQR.toLowerCase().includes(termino)) ||
+                    (m.fromLocationQR && m.fromLocationQR.toLowerCase().includes(termino)) ||
+                    (m.workOrderCode && m.workOrderCode.toLowerCase().includes(termino))
+                );
+            }
+            
+            return movimientos;
+        }
+
+        // ============================================================================
+        // HOOK END: HISTORIAL
+        // ============================================================================
+
+        // ============================================================================
+        // GESTIÓN DE USUARIOS
+        // ============================================================================
+
+        function agregarUsuario() {
+            const username = document.getElementById('nuevoUsername').value.trim();
+            const password = document.getElementById('nuevoPassword').value.trim();
+            const nombre = document.getElementById('nuevoNombre').value.trim();
+            const role = document.getElementById('nuevoRole').value;
+
+            if (!username || !password || !nombre) {
+                alert('⚠️ Completa todos los campos');
+                return;
+            }
+
+            if (state.store.users[username]) {
+                alert('❌ El usuario ya existe');
+                return;
+            }
+
+            state.store.users[username] = {
+                password,
+                role,
+                nombre_completo: nombre
+            };
+
+            Store.save(state.store);
+            alert('✅ Usuario creado correctamente');
+            document.getElementById('nuevoUsername').value = '';
+            document.getElementById('nuevoPassword').value = '';
+            document.getElementById('nuevoNombre').value = '';
+            render();
+        }
+
+        function eliminarUsuario(username) {
+            if (username === 'admin') {
+                alert('❌ No se puede eliminar el usuario admin');
+                return;
+            }
+
+            if (confirm(`¿Eliminar usuario "${username}"?`)) {
+                delete state.store.users[username];
+                Store.save(state.store);
+                alert('✅ Usuario eliminado');
+                render();
+            }
+        }
+
+        // ============================================================================
+        // RENDERIZADO DE LA UI
+        // ============================================================================
+
+        function render() {
+            const app = document.getElementById('app');
+            
+            if (!state.isAuthenticated) {
+                app.innerHTML = renderLogin();
+                return;
+            }
+
+            let content = '';
+            
+            if (state.activeTab === 'inicio') {
+                content = renderInicio();
+            } else if (state.activeTab === 'entrada') {
+                content = renderEntrada();
+            } else if (state.activeTab === 'salida') {
+                content = renderSalida();
+            } else if (state.activeTab === 'buscar') {
+                content = renderBuscar();
+            } else if (state.activeTab === 'historial') {
+                content = renderHistorial();
+            } else if (state.activeTab === 'usuarios') {
+                content = renderUsuarios();
+            }
+
+            const tabs = [
+                { id: 'inicio', label: 'Inicio' },
+                { id: 'entrada', label: 'Entrada' },
+                { id: 'salida', label: 'Salida' },
+                { id: 'buscar', label: 'Buscar' },
+                { id: 'historial', label: 'Historial' }
+            ];
+            
+            if (state.currentUser.role === 'admin') {
+                tabs.push({ id: 'usuarios', label: 'Usuarios' });
+            }
+
+            app.innerHTML = `
+                <div class="min-h-screen pb-20">
+                    <div class="sticky top-0 z-10 bg-gradient-to-r from-blue-500 to-blue-600 shadow-lg p-4">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                </svg>
+                                <div>
+                                    <h1 class="text-xl font-bold text-white">Sistema Logística v10</h1>
+                                    <p class="text-xs text-blue-100">${state.currentUser.username} - ${state.currentUser.nombre_completo}</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="exportarJSON()" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg transition-all backdrop-blur-sm text-sm">
+                                    Exportar
+                                </button>
+                                <button onclick="triggerImport()" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg transition-all backdrop-blur-sm text-sm">
+                                    Importar
+                                </button>
+                                <button onclick="state.isAuthenticated=false; render()" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-all backdrop-blur-sm">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="max-w-7xl mx-auto p-4">
+                        <div class="bg-white rounded-xl shadow-md mb-4 p-2">
+                            <div class="grid grid-cols-3 gap-2">
+                                ${tabs.map(tab => `
+                                    <button onclick="state.activeTab='${tab.id}'; render()" 
+                                        class="py-3 px-3 rounded-lg font-medium transition-all ${state.activeTab === tab.id ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                                        ${tab.label}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            ${content}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Scanner -->
+                <div id="scannerModal" class="hidden fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+                    <div class="bg-white rounded-lg w-full max-w-md">
+                        <div class="flex justify-between items-center p-4 border-b">
+                            <h3 class="font-bold text-lg">Escanear Código QR</h3>
+                            <button onclick="cerrarScanner()" class="text-red-600 hover:text-red-700 hover:bg-red-100 font-bold text-3xl w-10 h-10 rounded-full flex items-center justify-center">&times;</button>
+                        </div>
+                        <div class="p-4">
+                            <div id="qr-reader" class="rounded-lg overflow-hidden"></div>
+                            <p class="text-sm text-gray-600 mt-4 text-center">Apunta la cámara al código QR</p>
+                        </div>
+                        <div class="p-4 border-t">
+                            <button onclick="cerrarScanner()" class="w-full bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-lg font-bold transition-all">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderLogin() {
+            return `
+                <div class="min-h-screen bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 flex items-center justify-center p-4">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+                        <div class="text-center mb-8">
+                            <div class="bg-gradient-to-br from-blue-100 to-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                                <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                </svg>
+                            </div>
+                            <h1 class="text-3xl font-bold text-slate-800">Sistema Logística v10</h1>
+                            <p class="text-slate-600 mt-2">Control de Inventario con QR</p>
+                        </div>
+                        <form onsubmit="handleLogin(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">Usuario</label>
+                                <input type="text" id="username" class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-400 focus:outline-none transition-colors" required>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">Contraseña</label>
+                                <input type="password" id="password" class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-400 focus:outline-none transition-colors" required>
+                            </div>
+                            <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-4 px-6 rounded-lg transition-all shadow-md">
+                                Iniciar Sesión
+                            </button>
+                        </form>
+                        <div class="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                            <p class="text-xs text-slate-600 text-center font-semibold mb-2">Usuarios de prueba:</p>
+                            <p class="text-xs text-slate-500">Admin: admin / admin123</p>
+                            <p class="text-xs text-slate-500">Operario: operario / oper123</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderInicio() {
+            // Calcular totales desde el Store
+            const totalUbicaciones = Store.getInventory(state.store).length;
+            const totalUnidades = Store.getInventory(state.store).reduce((sum, i) => sum + i.quantity, 0);
+            const totalMovimientos = state.store.movements.length;
+
+            return `
+                <h2 class="text-2xl font-bold mb-4 text-slate-800">Panel Principal</h2>
+                <div class="grid grid-cols-1 gap-4 mb-6">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white shadow-lg">
+                        <p class="text-sm opacity-90">Total Ubicaciones</p>
+                        <p class="text-4xl font-bold">${totalUbicaciones}</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-6 text-white shadow-lg">
+                        <p class="text-sm opacity-90">Total Unidades</p>
+                        <p class="text-4xl font-bold">${totalUnidades}</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-violet-500 to-violet-600 rounded-xl p-6 text-white shadow-lg">
+                        <p class="text-sm opacity-90">Total Movimientos</p>
+                        <p class="text-4xl font-bold">${totalMovimientos}</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="state.activeTab='entrada'; render()" class="bg-white border-2 border-emerald-200 hover:border-emerald-400 rounded-xl p-4 text-left transition-all shadow-sm hover:shadow">
+                        <p class="font-semibold text-slate-800">Entrada</p>
+                        <p class="text-xs text-slate-500 mt-1">Agregar stock</p>
+                    </button>
+                    <button onclick="state.activeTab='salida'; render()" class="bg-white border-2 border-rose-200 hover:border-rose-400 rounded-xl p-4 text-left transition-all shadow-sm hover:shadow">
+                        <p class="font-semibold text-slate-800">Salida</p>
+                        <p class="text-xs text-slate-500 mt-1">Retirar stock</p>
+                    </button>
+                    <button onclick="state.activeTab='buscar'; render()" class="bg-white border-2 border-blue-200 hover:border-blue-400 rounded-xl p-4 text-left transition-all shadow-sm hover:shadow">
+                        <p class="font-semibold text-slate-800">Buscar</p>
+                        <p class="text-xs text-slate-500 mt-1">Consultar inventario</p>
+                    </button>
+                    <button onclick="state.activeTab='historial'; render()" class="bg-white border-2 border-amber-200 hover:border-amber-400 rounded-xl p-4 text-left transition-all shadow-sm hover:shadow">
+                        <p class="font-semibold text-slate-800">Historial</p>
+                        <p class="text-xs text-slate-500 mt-1">Ver movimientos</p>
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderEntrada() {
+            return `
+                <h2 class="text-xl font-bold mb-4 text-slate-800">Entrada de Inventario</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block mb-2 font-medium text-slate-700">Código de Pieza *</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="entradaPieza" oninput="actualizarAlertaUbicaciones()" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-400 focus:outline-none" placeholder="PIE-001">
+                            <button onclick="iniciarScanner('entradaPieza')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">
+                                QR
+                            </button>
+                        </div>
+                    </div>
+                    <div id="alertaUbicaciones"></div>
+                    <div>
+                        <label class="block mb-2 font-medium text-slate-700">Orden de Fabricación</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="entradaOrden" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-400 focus:outline-none" placeholder="OF-2024-001">
+                            <button onclick="iniciarScanner('entradaOrden')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">
+                                QR
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block mb-2 font-medium text-slate-700">Ubicación *</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="entradaUbicacion" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-400 focus:outline-none" placeholder="M1-F3-C5">
+                            <button onclick="iniciarScanner('entradaUbicacion')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">
+                                QR
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block mb-2 font-medium text-slate-700">Cantidad *</label>
+                        <input type="number" id="entradaCantidad" class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-400 focus:outline-none" min="1" placeholder="1">
+                    </div>
+                    <button onclick="procesarEntrada()" class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white py-4 rounded-lg font-bold text-lg shadow-md">
+                        Registrar Entrada
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderSalida() {
+            return `
+                <h2 class="text-xl font-bold mb-4 text-slate-800">Salida de Inventario</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block mb-2 font-medium text-slate-700">Código de Pieza *</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="salidaPieza" oninput="mostrarUbicacionesDisponibles()" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-rose-400 focus:outline-none" placeholder="PIE-001">
+                            <button onclick="iniciarScanner('salidaPieza')" class="bg-rose-500 hover:bg-rose-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">
+                                QR
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="ubicacionesDisponibles"></div>
+                    
+                    <button onclick="procesarSalida()" class="w-full bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white py-4 rounded-lg font-bold text-lg shadow-md">
+                        Confirmar Salida
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderBuscar() {
+            return `
+                <h2 class="text-xl font-bold mb-4 text-slate-800">Buscar en Inventario</h2>
+                
+                <div class="mb-4 flex gap-2">
+                    <button onclick="state.buscarPor='pieza'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.buscarPor === 'pieza' ? 'bg-blue-500 text-white shadow-md' : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300'}">
+                        Por Código de Pieza
+                    </button>
+                    <button onclick="state.buscarPor='ubicacion'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.buscarPor === 'ubicacion' ? 'bg-blue-500 text-white shadow-md' : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300'}">
+                        Por Ubicación
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    ${state.buscarPor === 'pieza' ? `
+                        <div>
+                            <label class="block mb-2 font-medium text-slate-700">Código de Pieza</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="busquedaPieza" oninput="buscarInventario()" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-400 focus:outline-none" placeholder="PIE-001">
+                                <button onclick="iniciarScanner('busquedaPieza')" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">
+                                    QR
+                                </button>
+                            </div>
+                        </div>
+                    ` : `
+                        <div>
+                            <label class="block mb-2 font-medium text-slate-700">Ubicación</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="busquedaUbicacion" oninput="buscarInventario()" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-400 focus:outline-none" placeholder="M1-F3-C5">
+                                <button onclick="iniciarScanner('busquedaUbicacion')" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">
+                                    QR
+                                </button>
+                            </div>
+                        </div>
+                    `}
+                    
+                    <div id="resultadosBusqueda" class="mt-4">
+                        <p class="text-slate-500 text-center py-4">Ingresa un término de búsqueda</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderHistorial() {
+            const movimientos = obtenerHistorial();
+            
+            return `
+                <h2 class="text-xl font-bold mb-4 text-slate-800">Historial de Movimientos</h2>
+                
+                <div class="mb-4">
+                    <input type="text" 
+                        value="${state.historialBusqueda}" 
+                        oninput="state.historialBusqueda = this.value; render()" 
+                        class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-amber-400 focus:outline-none mb-3" 
+                        placeholder="Buscar en historial...">
+                    
+                    <div class="flex gap-2">
+                        <button onclick="state.historialFiltro='general'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.historialFiltro === 'general' ? 'bg-amber-500 text-white shadow-md' : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-amber-300'}">
+                            General
+                        </button>
+                        <button onclick="state.historialFiltro='entradas'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.historialFiltro === 'entradas' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-emerald-300'}">
+                            Entradas
+                        </button>
+                        <button onclick="state.historialFiltro='salidas'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.historialFiltro === 'salidas' ? 'bg-rose-500 text-white shadow-md' : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-rose-300'}">
+                            Salidas
+                        </button>
+                    </div>
+                </div>
+                
+                ${movimientos.length === 0 ? 
+                    '<div class="bg-slate-50 border-2 border-slate-200 rounded-lg p-6 text-center"><p class="text-slate-600">No hay movimientos para mostrar</p></div>' 
+                    : 
+                    '<div class="space-y-3">' + movimientos.map(mov => `
+                        <div class="border-l-4 ${mov.type === 'IN' ? 'border-emerald-500 bg-emerald-50' : 'border-rose-500 bg-rose-50'} rounded-lg p-4 shadow-sm">
+                            <p class="font-bold text-slate-800">${mov.type === 'IN' ? 'ENTRADA' : 'SALIDA'} - ${mov.itemCode}</p>
+                            <p class="text-sm text-slate-600">${mov.type === 'IN' ? mov.toLocationQR : mov.fromLocationQR} | ${mov.quantity} uds</p>
+                            ${mov.workOrderCode ? '<p class="text-sm text-slate-600">OF: ' + mov.workOrderCode + '</p>' : ''}
+                            <p class="text-xs text-slate-500 mt-1">${new Date(mov.createdAt).toLocaleString('es-ES')} | ${mov.createdBy || 'unknown'}</p>
+                        </div>
+                    `).join('') + '</div>'
+                }
+            `;
+        }
+
+        function renderUsuarios() {
+            const userList = Object.keys(state.store.users).map(username => ({
+                username,
+                ...state.store.users[username]
+            }));
+            
+            return `
+                <h2 class="text-xl font-bold mb-4 text-slate-800">Gestión de Usuarios</h2>
+                
+                <div class="bg-gradient-to-br from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-4 mb-4">
+                    <h3 class="font-bold mb-3 text-slate-800">Agregar Nuevo Usuario</h3>
+                    <div class="space-y-3">
+                        <input type="text" id="nuevoUsername" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Usuario">
+                        <input type="password" id="nuevoPassword" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Contraseña">
+                        <input type="text" id="nuevoNombre" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Nombre Completo">
+                        <select id="nuevoRole" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none">
+                            <option value="user">Usuario</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                        <button onclick="agregarUsuario()" class="w-full bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 text-white py-3 rounded-lg font-bold shadow-md">
+                            Crear Usuario
+                        </button>
+                    </div>
+                </div>
+
+                <h3 class="font-bold mb-3 text-slate-800">Usuarios Existentes</h3>
+                <div class="space-y-2">
+                    ${userList.map(user => `
+                        <div class="bg-white border-2 border-slate-200 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                            <div>
+                                <p class="font-bold text-slate-800">${user.username}</p>
+                                <p class="text-sm text-slate-600">${user.nombre_completo}</p>
+                                <p class="text-xs text-slate-500">${user.role === 'admin' ? 'Administrador' : 'Usuario'}</p>
+                            </div>
+                            ${user.username !== 'admin' ? `
+                                <button onclick="eliminarUsuario('${user.username}')" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg shadow-sm">
+                                    Eliminar
+                                </button>
+                            ` : '<span class="text-slate-400 text-sm">Protegido</span>'}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // Inicializar
+        render();
+    </script>
+</body>
+</html>
