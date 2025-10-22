@@ -577,29 +577,49 @@
     \`;
   }
 
-  function renderUsuarios() {
-    const userList = Object.keys(state.store.users).map(username => ({ username, ...state.store.users[username] }));
-    return \`
-      <h2 class="text-xl font-bold mb-4 text-slate-800">Gestión de Usuarios</h2>
-      <div class="bg-gradient-to-br from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-4 mb-4">
-        <h3 class="font-bold mb-3 text-slate-800">Agregar Nuevo Usuario</h3>
-        <div class="space-y-3">
-          <input id="nuevoUsername" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400" placeholder="Usuario">
-          <input id="nuevoPassword" type="password" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400" placeholder="Contraseña">
-          <input id="nuevoNombre" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400" placeholder="Nombre Completo">
-          <select id="nuevoRole" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400"><option value="user">Usuario</option><option value="admin">Administrador</option></select>
-          <button onclick="agregarUsuario()" class="w-full bg-gradient-to-r from-violet-500 to-indigo-600 text-white py-3 rounded-lg font-bold shadow-md">Crear Usuario</button>
-        </div>
+function renderUsuarios() {
+  const userList = Object.keys(state.store.users).map(username => ({
+    username,
+    ...state.store.users[username]
+  }));
+
+  return `
+    <h2 class="text-xl font-bold mb-4 text-slate-800">Gestión de Usuarios</h2>
+    
+    <div class="bg-gradient-to-br from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-4 mb-4">
+      <h3 class="font-bold mb-3 text-slate-800">Agregar Nuevo Usuario</h3>
+      <div class="space-y-3">
+        <input type="text" id="nuevoUsername" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Usuario">
+        <input type="password" id="nuevoPassword" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Contraseña">
+        <input type="text" id="nuevoNombre" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Nombre Completo">
+        <select id="nuevoRole" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none">
+          <option value="user">Usuario</option>
+          <option value="admin">Administrador</option>
+        </select>
+        <button onclick="agregarUsuario()" class="w-full bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 text-white py-3 rounded-lg font-bold shadow-md">
+          Crear Usuario
+        </button>
       </div>
-      <h3 class="font-bold mb-3 text-slate-800">Usuarios Existentes</h3>
-      <div class="space-y-2">
-        \${userList.map(user => \`
-          <div class="bg-white border-2 border-slate-200 rounded-xl p-4 flex justify-between items-center shadow-sm">
-            <div><p class="font-bold text-slate-800">\${user.username}</p><p class="text-sm text-slate-600">\${user.nombre_completo}</p><p class="text-xs text-slate-500">\${user.role === 'admin' ? 'Administrador' : 'Usuario'}</p></div>
-            \${user.username !== 'admin' ? '<button onclick="eliminarUsuario(\\'\'+user.username+'\\')" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg shadow-sm">Eliminar</button>' : '<span class="text-slate-400 text-sm">Protegido</span>'}
-          </div>\`).join('')}
-      </div>\`;
-  }
+    </div>
+
+    <h3 class="font-bold mb-3 text-slate-800">Usuarios Existentes</h3>
+    <div class="space-y-2">
+      ${userList.map(user => `
+        <div class="bg-white border-2 border-slate-200 rounded-xl p-4 flex justify-between items-center shadow-sm">
+          <div>
+            <p class="font-bold text-slate-800">${user.username}</p>
+            <p class="text-sm text-slate-600">${user.nombre_completo}</p>
+            <p class="text-xs text-slate-500">${user.role === 'admin' ? 'Administrador' : 'Usuario'}</p>
+          </div>
+          ${user.username !== 'admin'
+            ? `<button onclick="eliminarUsuario('${user.username}')" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg shadow-sm">Eliminar</button>`
+            : `<span class="text-slate-400 text-sm">Protegido</span>`
+          }
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
 
   // Inicializar
   render();
