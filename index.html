@@ -1,41 +1,91 @@
 <!DOCTYPE html>
 <html lang="es">
-
 <head>
-  <!-- PWA (opcional) -->
-  <link rel="manifest" href="./manifest.json" onerror="this.remove()">
-  <meta name="theme-color" content="#facc15">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  
-  <!-- Meta básicos -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Sistema Logística v10</title>
+  <title>Sistema Logística v16 - Professional</title>
 
-  <!-- Librerías por CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
+  
+  <style>
+    :root {
+      --color-primary: #3b82f6;
+      --color-success: #10b981;
+      --color-danger: #ef4444;
+      --color-warning: #f59e0b;
+      --color-text: #1a1a1a;
+      --color-text-secondary: #6b7280;
+      --color-border: #e5e7eb;
+      --color-bg: #f9fafb;
+      --color-bg-card: #ffffff;
+    }
+
+    [data-theme="semi-dark"] {
+      --color-text: #e7e9ea;
+      --color-text-secondary: #71767b;
+      --color-border: #38444d;
+      --color-bg: #15202b;
+      --color-bg-card: #192734;
+    }
+
+    [data-theme="dark"] {
+      --color-text: #e4e6eb;
+      --color-text-secondary: #8a8d91;
+      --color-border: #2d2d2d;
+      --color-bg: #0a0a0a;
+      --color-bg-card: #1c1c1c;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: var(--color-bg) !important;
+      color: var(--color-text);
+      transition: background-color 0.3s, color 0.3s;
+    }
+    
+    .card-minimal {
+      background: var(--color-bg-card);
+      border: 1px solid var(--color-border);
+      transition: all 0.2s ease;
+    }
+    
+    .card-minimal:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    .fade-in {
+      animation: fadeIn 0.3s ease-in;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    html {
+      background-color: var(--color-bg);
+    }
+
+    #app {
+      background-color: var(--color-bg);
+      min-height: 100vh;
+    }
+  </style>
 </head>
 
-<body class="bg-gradient-to-br from-slate-50 to-slate-100">
+<body>
   <div id="app"></div>
 
-  <!-- ======== APP: TODO el JS dentro de este ÚNICO <script> ======== -->
   <script>
-  // ============================================================================
-  // STORE START
-  // ============================================================================
-
   const STORAGE_KEY = 'lts_store';
-  const CURRENT_VERSION = 1;
+  const THEME_KEY = 'lts_theme';
+  const CURRENT_VERSION = 2;
 
-  // Utilidad: generar UUID
   function uuid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
     }
-    // Fallback simple
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
       const r = Math.random() * 16 | 0;
       const v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -43,18 +93,14 @@
     });
   }
 
-  // Utilidad: obtener timestamp ISO
   function now() {
     return new Date().toISOString();
   }
 
-  // Store: funciones principales
   const Store = {
-    // Cargar desde localStorage y migrar si es necesario
     load() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) {
-        // Crear store vacío con versión 1
         return this._createEmptyStore();
       }
       try {
@@ -66,7 +112,6 @@
       }
     },
 
-    // Guardar en localStorage
     save(store) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
@@ -76,7 +121,6 @@
       }
     },
 
-    // Crear store vacío
     _createEmptyStore() {
       return {
         schemaVersion: CURRENT_VERSION,
@@ -84,6 +128,7 @@
         locations: [],
         inventory: [],
         movements: [],
+        workOrders: [],
         users: {
           admin:   { password: 'admin123',  role: 'admin', nombre_completo: 'Administrador' },
           operario:{ password: 'oper123',   role: 'user',  nombre_completo: 'Operario 1' }
@@ -91,22 +136,21 @@
       };
     },
 
-    // Sistema de migraciones (preparado para futuras versiones)
     _migrateIfNeeded(data) {
       if (!data.schemaVersion) data.schemaVersion = 1;
 
       let currentData = data;
-      // while (currentData.schemaVersion < CURRENT_VERSION) {
-      //   if (currentData.schemaVersion === 1) {
-      //     currentData = this._migrateV1toV2(currentData);
-      //   }
-      // }
+      
+      if (currentData.schemaVersion === 1) {
+        currentData.workOrders = [];
+        currentData.schemaVersion = 2;
+      }
 
-      // Asegurar estructuras
-      if (!currentData.items)      currentData.items = [];
-      if (!currentData.locations)  currentData.locations = [];
-      if (!currentData.inventory)  currentData.inventory = [];
-      if (!currentData.movements)  currentData.movements = [];
+      if (!currentData.items)       currentData.items = [];
+      if (!currentData.locations)   currentData.locations = [];
+      if (!currentData.inventory)   currentData.inventory = [];
+      if (!currentData.movements)   currentData.movements = [];
+      if (!currentData.workOrders)  currentData.workOrders = [];
       if (!currentData.users) {
         currentData.users = {
           admin:   { password: 'admin123', role: 'admin', nombre_completo: 'Administrador' },
@@ -116,7 +160,6 @@
       return currentData;
     },
 
-    // Crear o actualizar item
     upsertItem(store, code, description) {
       let item = store.items.find(i => i.code === code);
       if (!item) {
@@ -128,7 +171,6 @@
       return item;
     },
 
-    // Crear o actualizar ubicación
     upsertLocation(store, qr, module, row, col) {
       let location = store.locations.find(l => l.qr === qr);
       if (!location) {
@@ -145,7 +187,6 @@
       return location;
     },
 
-    // Obtener inventario filtrado
     getInventory(store, itemCode, locationQR) {
       const results = [];
       for (const invRow of store.inventory) {
@@ -167,7 +208,41 @@
       return results;
     },
 
-    // Agregar stock (entrada)
+    getOrCreateWorkOrder(store, workOrderCode, itemCode) {
+      let wo = store.workOrders.find(w => w.code === workOrderCode);
+      if (!wo) {
+        wo = {
+          id: uuid(),
+          code: workOrderCode,
+          itemCode: itemCode,
+          quantitySolicited: 0,
+          quantityProduced: 0,
+          quantityShipped: 0,
+          status: 'PENDIENTE',
+          createdAt: now(),
+          createdBy: state.currentUser ? state.currentUser.username : 'unknown',
+          description: ''
+        };
+        store.workOrders.push(wo);
+      }
+      return wo;
+    },
+
+    updateWorkOrderStatus(store, workOrderCode) {
+      const wo = store.workOrders.find(w => w.code === workOrderCode);
+      if (!wo) return;
+
+      if (wo.quantityProduced >= wo.quantitySolicited && wo.quantityShipped >= wo.quantitySolicited) {
+        wo.status = 'COMPLETADA';
+      } else if (wo.quantityShipped > 0 && wo.quantityShipped < wo.quantitySolicited) {
+        wo.status = 'ENVIO_PARCIAL';
+      } else if (wo.quantityProduced >= wo.quantitySolicited) {
+        wo.status = 'PRODUCCION_COMPLETA';
+      } else {
+        wo.status = 'PENDIENTE';
+      }
+    },
+
     addStock(store, itemCode, locationQR, qty, workOrderCode) {
       if (qty <= 0) return;
 
@@ -182,21 +257,34 @@
         store.inventory.push(invRow);
       }
 
+      if (workOrderCode) {
+        const wo = this.getOrCreateWorkOrder(store, workOrderCode, itemCode);
+        wo.quantityProduced += qty;
+        this.updateWorkOrderStatus(store, workOrderCode);
+      }
+
       store.movements.push({
-        id: uuid(), itemCode,
-        fromLocationQR: null, toLocationQR: locationQR,
-        quantity: qty, type: 'IN',
+        id: uuid(), 
+        itemCode,
+        fromLocationQR: null, 
+        toLocationQR: locationQR,
+        quantity: qty, 
+        type: 'IN',
         workOrderCode: workOrderCode || null,
         createdAt: now(),
         createdBy: state.currentUser ? state.currentUser.username : 'unknown',
-        clientUuid: uuid()
+        clientUuid: uuid(),
+        edited: false,
+        editedBy: null,
+        editedAt: null
       });
     },
 
-    // Retirar stock de múltiples ubicaciones (salida)
-    removeStockSplit(store, itemCode, picks) {
+    removeStockSplit(store, itemCode, picks, workOrderCode) {
       const item = store.items.find(i => i.code === itemCode);
       if (!item) throw new Error('Item no encontrado');
+
+      let totalQty = 0;
 
       for (const pick of picks) {
         const location = store.locations.find(l => l.qr === pick.locationQR);
@@ -207,43 +295,169 @@
           throw new Error(`Stock insuficiente en ${pick.locationQR}`);
         }
         invRow.quantity -= pick.quantity;
+        totalQty += pick.quantity;
+        
         if (invRow.quantity === 0) {
           const idx = store.inventory.indexOf(invRow);
           if (idx > -1) store.inventory.splice(idx, 1);
         }
+        
         store.movements.push({
-          id: uuid(), itemCode,
-          fromLocationQR: pick.locationQR, toLocationQR: null,
-          quantity: pick.quantity, type: 'OUT',
+          id: uuid(), 
+          itemCode,
+          fromLocationQR: pick.locationQR, 
+          toLocationQR: null,
+          quantity: pick.quantity, 
+          type: 'OUT',
+          workOrderCode: workOrderCode || null,
           createdAt: now(),
           createdBy: state.currentUser ? state.currentUser.username : 'unknown',
-          clientUuid: uuid()
+          clientUuid: uuid(),
+          edited: false,
+          editedBy: null,
+          editedAt: null
         });
       }
+
+      if (workOrderCode) {
+        const wo = store.workOrders.find(w => w.code === workOrderCode);
+        if (wo) {
+          wo.quantityShipped += totalQty;
+          this.updateWorkOrderStatus(store, workOrderCode);
+        }
+      }
+    },
+
+    transferStock(store, itemCode, fromLocationQR, toLocationQR, qty) {
+      if (qty <= 0) throw new Error('Cantidad debe ser mayor a 0');
+
+      const item = store.items.find(i => i.code === itemCode);
+      if (!item) throw new Error('Item no encontrado');
+
+      const fromLocation = store.locations.find(l => l.qr === fromLocationQR);
+      const toLocation = this.upsertLocation(store, toLocationQR);
+
+      if (!fromLocation) throw new Error('Ubicación origen no encontrada');
+
+      const fromInv = store.inventory.find(inv => inv.itemId === item.id && inv.locationId === fromLocation.id);
+      if (!fromInv || fromInv.quantity < qty) {
+        throw new Error(`Stock insuficiente en ${fromLocationQR}`);
+      }
+      fromInv.quantity -= qty;
+      if (fromInv.quantity === 0) {
+        const idx = store.inventory.indexOf(fromInv);
+        if (idx > -1) store.inventory.splice(idx, 1);
+      }
+
+      let toInv = store.inventory.find(inv => inv.itemId === item.id && inv.locationId === toLocation.id);
+      if (toInv) {
+        toInv.quantity += qty;
+      } else {
+        toInv = { id: uuid(), itemId: item.id, locationId: toLocation.id, quantity: qty };
+        store.inventory.push(toInv);
+      }
+
+      store.movements.push({
+        id: uuid(),
+        itemCode,
+        fromLocationQR: fromLocationQR,
+        toLocationQR: toLocationQR,
+        quantity: qty,
+        type: 'TRANSFER',
+        createdAt: now(),
+        createdBy: state.currentUser ? state.currentUser.username : 'unknown',
+        clientUuid: uuid(),
+        edited: false,
+        editedBy: null,
+        editedAt: null
+      });
+    },
+
+    editMovement(store, movementId, newQuantity, username) {
+      const movement = store.movements.find(m => m.id === movementId);
+      if (!movement) throw new Error('Movimiento no encontrado');
+
+      const oldQuantity = movement.quantity;
+      const diff = newQuantity - oldQuantity;
+
+      if (movement.type === 'IN') {
+        const item = store.items.find(i => i.code === movement.itemCode);
+        const location = store.locations.find(l => l.qr === movement.toLocationQR);
+        if (item && location) {
+          const invRow = store.inventory.find(inv => inv.itemId === item.id && inv.locationId === location.id);
+          if (invRow) invRow.quantity += diff;
+        }
+        if (movement.workOrderCode) {
+          const wo = store.workOrders.find(w => w.code === movement.workOrderCode);
+          if (wo) {
+            wo.quantityProduced += diff;
+            this.updateWorkOrderStatus(store, movement.workOrderCode);
+          }
+        }
+      } else if (movement.type === 'OUT') {
+        const item = store.items.find(i => i.code === movement.itemCode);
+        const location = store.locations.find(l => l.qr === movement.fromLocationQR);
+        if (item && location) {
+          const invRow = store.inventory.find(inv => inv.itemId === item.id && inv.locationId === location.id);
+          if (invRow) invRow.quantity -= diff;
+        }
+        if (movement.workOrderCode) {
+          const wo = store.workOrders.find(w => w.code === movement.workOrderCode);
+          if (wo) {
+            wo.quantityShipped += diff;
+            this.updateWorkOrderStatus(store, movement.workOrderCode);
+          }
+        }
+      } else if (movement.type === 'TRANSFER') {
+        const item = store.items.find(i => i.code === movement.itemCode);
+        const fromLocation = store.locations.find(l => l.qr === movement.fromLocationQR);
+        const toLocation = store.locations.find(l => l.qr === movement.toLocationQR);
+        if (item && fromLocation && toLocation) {
+          const fromInv = store.inventory.find(inv => inv.itemId === item.id && inv.locationId === fromLocation.id);
+          const toInv = store.inventory.find(inv => inv.itemId === item.id && inv.locationId === toLocation.id);
+          if (fromInv) fromInv.quantity -= diff;
+          if (toInv) toInv.quantity += diff;
+        }
+      }
+
+      movement.quantity = newQuantity;
+      movement.edited = true;
+      movement.editedBy = username;
+      movement.editedAt = now();
     }
   };
 
-  // ============================================================================
-  // STORE END
-  // ============================================================================
-
-  // Estado global de la UI
   const state = {
-    store: Store.load(), // Cargar store al inicio
+    store: Store.load(),
     isAuthenticated: false,
     currentUser: null,
     activeTab: 'inicio',
     historialFiltro: 'general',
     historialBusqueda: '',
-    buscarPor: 'pieza'
+    buscarPor: 'pieza',
+    creatingWorkOrder: false,
+    pendingWorkOrderData: null,
+    ordenesSearchTerm: '',
+    ordenesFilter: 'activas',
+    theme: localStorage.getItem(THEME_KEY) || 'light',
+    showExcesoModal: false,
+    excesoData: null
   };
 
   let html5QrCode = null;
   let currentInputId = null;
 
-  // ============================================================================
-  // FUNCIONES DE EXPORTAR/IMPORTAR
-  // ============================================================================
+  document.documentElement.setAttribute('data-theme', state.theme);
+
+  function cambiarTema() {
+    const temas = ['light', 'semi-dark', 'dark'];
+    const currentIndex = temas.indexOf(state.theme);
+    const nextIndex = (currentIndex + 1) % temas.length;
+    state.theme = temas[nextIndex];
+    localStorage.setItem(THEME_KEY, state.theme);
+    document.documentElement.setAttribute('data-theme', state.theme);
+    document.body.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--color-bg');
+  }
 
   function exportarJSON() {
     const data = localStorage.getItem(STORAGE_KEY) || '{}';
@@ -283,10 +497,6 @@
     input.click();
   }
 
-  // ============================================================================
-  // FUNCIONES DE LOGIN Y AUTENTICACIÓN
-  // ============================================================================
-
   function handleLogin(e) {
     e.preventDefault();
     const username = document.getElementById('username').value;
@@ -301,10 +511,6 @@
     }
   }
 
-  // ============================================================================
-  // FUNCIONES DEL ESCÁNER QR
-  // ============================================================================
-
   function iniciarScanner(inputId) {
     currentInputId = inputId;
     document.getElementById('scannerModal').classList.remove('hidden');
@@ -316,19 +522,21 @@
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
           const input = document.getElementById(currentInputId);
-          input.value = decodedText;
-
-          input.classList.add('border-green-500', 'border-4');
-          setTimeout(() => input.classList.remove('border-green-500', 'border-4'), 2000);
+          if (input) {
+            input.value = decodedText;
+            input.classList.add('ring-2', 'ring-green-500');
+            setTimeout(() => input.classList.remove('ring-2', 'ring-green-500'), 2000);
+          }
 
           cerrarScanner();
 
           if (currentInputId === 'entradaPieza') actualizarAlertaUbicaciones();
-          if (currentInputId === 'salidaPieza')   mostrarUbicacionesDisponibles();
+          if (currentInputId === 'salidaPieza') mostrarUbicacionesDisponibles();
           if (currentInputId === 'busquedaPieza' || currentInputId === 'busquedaUbicacion') buscarInventario();
+          if (currentInputId === 'traslado_pieza') mostrarUbicacionesTraslado();
         }
       ).catch(() => {
-        alert('Error: No se puede acceder a la cámara.\n\nAsegúrate de dar permisos.');
+        alert('Error: No se puede acceder a la cámara.');
         cerrarScanner();
       });
     }, 100);
@@ -349,9 +557,46 @@
     }
   }
 
-  // ============================================================================
-  // HOOK START: ENTRADA
-  // ============================================================================
+  function mostrarModalNuevaOF(pieza, orden, ubicacion, cantidad) {
+    state.pendingWorkOrderData = { pieza, orden, ubicacion, cantidad };
+    state.creatingWorkOrder = true;
+    render();
+  }
+
+  function crearNuevaOF() {
+    const solicitado = parseInt(document.getElementById('of_cantidad_solicitada').value);
+    const descripcion = document.getElementById('of_descripcion').value.trim();
+
+    if (!solicitado || solicitado <= 0) {
+      alert('⚠️ Ingresa una cantidad solicitada válida');
+      return;
+    }
+
+    const { pieza, orden, ubicacion, cantidad } = state.pendingWorkOrderData;
+
+    const wo = Store.getOrCreateWorkOrder(state.store, orden, pieza);
+    wo.quantitySolicited = solicitado;
+    wo.description = descripcion;
+
+    Store.addStock(state.store, pieza, ubicacion, cantidad, orden);
+    Store.save(state.store);
+
+    state.creatingWorkOrder = false;
+    state.pendingWorkOrderData = null;
+
+    alert('✅ Orden creada y entrada registrada');
+    document.getElementById('entradaPieza').value = '';
+    document.getElementById('entradaOrden').value = '';
+    document.getElementById('entradaUbicacion').value = '';
+    document.getElementById('entradaCantidad').value = '';
+    render();
+  }
+
+  function cancelarNuevaOF() {
+    state.creatingWorkOrder = false;
+    state.pendingWorkOrderData = null;
+    render();
+  }
 
   function actualizarAlertaUbicaciones() {
     const pieza = document.getElementById('entradaPieza').value.trim();
@@ -362,9 +607,9 @@
     const ubicaciones = Store.getInventory(state.store, pieza);
     if (ubicaciones.length > 0) {
       alertaDiv.innerHTML = `
-        <div class="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
-          <p class="font-bold text-sm text-amber-800">⚠️ Pieza con ubicaciones existentes:</p>
-          ${ubicaciones.map(u => `<p class="text-sm text-amber-700">${u.locationQR}: ${u.quantity} uds</p>`).join('')}
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p class="font-medium text-sm text-amber-900 mb-1">Ubicaciones existentes</p>
+          ${ubicaciones.map(u => `<p class="text-xs text-amber-700">${u.locationQR}: ${u.quantity} uds</p>`).join('')}
         </div>
       `;
     } else {
@@ -379,64 +624,189 @@
     const cantidad  = parseInt(document.getElementById('entradaCantidad').value);
 
     if (!pieza || !ubicacion || !cantidad) {
-      alert('⚠️ Completa los campos obligatorios:\n- Código de Pieza\n- Ubicación\n- Cantidad');
+      alert('⚠️ Completa los campos obligatorios');
       return;
     }
 
-    try {
-      Store.addStock(state.store, pieza, ubicacion, cantidad, orden || null);
-      Store.save(state.store);
+    if (orden) {
+      const existingWO = state.store.workOrders.find(w => w.code === orden);
+      
+      if (!existingWO) {
+        mostrarModalNuevaOF(pieza, orden, ubicacion, cantidad);
+        return;
+      } else {
+        const nuevaProduccion = existingWO.quantityProduced + cantidad;
+        const exceso = nuevaProduccion - existingWO.quantitySolicited;
 
-      alert('✅ Entrada registrada correctamente');
-      document.getElementById('entradaPieza').value = '';
-      document.getElementById('entradaOrden').value = '';
-      document.getElementById('entradaUbicacion').value = '';
-      document.getElementById('entradaCantidad').value = '';
-      render();
-    } catch (e) {
-      alert('Error: ' + e.message);
+        if (exceso > 0) {
+          state.excesoData = {
+            pieza,
+            orden,
+            ubicacion,
+            cantidad,
+            solicitado: existingWO.quantitySolicited,
+            producido: existingWO.quantityProduced,
+            exceso,
+            cantidadParaCompletar: existingWO.quantitySolicited - existingWO.quantityProduced
+          };
+          state.showExcesoModal = true;
+          render();
+          return;
+        }
+
+        Store.addStock(state.store, pieza, ubicacion, cantidad, orden);
+        Store.save(state.store);
+
+        const wo = state.store.workOrders.find(w => w.code === orden);
+        if (wo && wo.quantityProduced >= wo.quantitySolicited && wo.status === 'PRODUCCION_COMPLETA') {
+          alert(`✅ Entrada registrada\n\nProducción completada: ${wo.quantityProduced}/${wo.quantitySolicited} uds`);
+        } else {
+          alert('✅ Entrada registrada');
+        }
+      }
+    } else {
+      Store.addStock(state.store, pieza, ubicacion, cantidad, null);
+      Store.save(state.store);
+      alert('✅ Entrada registrada (sin orden)');
     }
+
+    document.getElementById('entradaPieza').value = '';
+    document.getElementById('entradaOrden').value = '';
+    document.getElementById('entradaUbicacion').value = '';
+    document.getElementById('entradaCantidad').value = '';
+    render();
   }
 
-  // ============================================================================
-  // HOOK END: ENTRADA
-  // ============================================================================
+  function cerrarModalExceso() {
+    state.showExcesoModal = false;
+    state.excesoData = null;
+    render();
+  }
 
-  // ============================================================================
-  // HOOK START: SALIDA
-  // ============================================================================
+  function cargarEnOtraOrden() {
+    const { pieza, orden, ubicacion, cantidad, cantidadParaCompletar, exceso } = state.excesoData;
+    
+    if (cantidadParaCompletar > 0) {
+      Store.addStock(state.store, pieza, ubicacion, cantidadParaCompletar, orden);
+      alert(`✅ Se completó la orden ${orden} con ${cantidadParaCompletar} uds`);
+    }
+    
+    const nuevaOrden = prompt(`Ingresa el código de la nueva Orden de Fabricación para las ${exceso} uds restantes:`);
+    if (!nuevaOrden) {
+      Store.save(state.store);
+      cerrarModalExceso();
+      limpiarFormularioEntrada();
+      return;
+    }
+
+    const existingWO = state.store.workOrders.find(w => w.code === nuevaOrden);
+    
+    if (!existingWO) {
+      mostrarModalNuevaOF(pieza, nuevaOrden, ubicacion, exceso);
+    } else {
+      Store.addStock(state.store, pieza, ubicacion, exceso, nuevaOrden);
+      Store.save(state.store);
+      alert(`✅ ${exceso} uds cargadas en orden ${nuevaOrden}`);
+    }
+
+    cerrarModalExceso();
+    limpiarFormularioEntrada();
+  }
+
+  function cargarSinOrden() {
+    const { pieza, orden, ubicacion, cantidad, cantidadParaCompletar, exceso } = state.excesoData;
+    
+    if (cantidadParaCompletar > 0) {
+      Store.addStock(state.store, pieza, ubicacion, cantidadParaCompletar, orden);
+    }
+    
+    Store.addStock(state.store, pieza, ubicacion, exceso, null);
+    Store.save(state.store);
+    
+    alert(`✅ Entrada registrada:\n- ${cantidadParaCompletar} uds en ${orden}\n- ${exceso} uds sin orden`);
+
+    cerrarModalExceso();
+    limpiarFormularioEntrada();
+  }
+
+  function limpiarFormularioEntrada() {
+    document.getElementById('entradaPieza').value = '';
+    document.getElementById('entradaOrden').value = '';
+    document.getElementById('entradaUbicacion').value = '';
+    document.getElementById('entradaCantidad').value = '';
+    render();
+  }
+
+  function getOrdenesPendientes(itemCode) {
+    return state.store.workOrders.filter(wo => 
+      wo.itemCode === itemCode && 
+      wo.status !== 'COMPLETADA' &&
+      wo.quantityShipped < wo.quantitySolicited
+    );
+  }
 
   function mostrarUbicacionesDisponibles() {
     const pieza = document.getElementById('salidaPieza').value.trim();
     const ubicacionesDiv = document.getElementById('ubicacionesDisponibles');
+    const selectorOrdenDiv = document.getElementById('selectorOrden');
 
-    if (!pieza) { ubicacionesDiv.innerHTML = ''; return; }
+    if (!pieza) { 
+      ubicacionesDiv.innerHTML = ''; 
+      selectorOrdenDiv.innerHTML = '';
+      return; 
+    }
 
     const ubicaciones = Store.getInventory(state.store, pieza);
+    const ordenesPendientes = getOrdenesPendientes(pieza);
+
+    if (ordenesPendientes.length > 0) {
+      selectorOrdenDiv.innerHTML = `
+        <div class="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4 mb-4">
+          <p class="font-semibold text-blue-900 text-sm mb-2">⚠️ Órdenes Pendientes para esta Pieza</p>
+          <p class="text-xs text-blue-700 mb-3">Debes seleccionar una orden para continuar</p>
+          <select id="salidaOrdenObligatoria" class="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+            <option value="">-- Selecciona una Orden --</option>
+            ${ordenesPendientes.map(wo => {
+              const pendiente = wo.quantitySolicited - wo.quantityShipped;
+              return `<option value="${wo.code}">${wo.code} - Pendiente: ${pendiente} uds (${wo.description || 'Sin descripción'})</option>`;
+            }).join('')}
+          </select>
+        </div>
+      `;
+    } else {
+      selectorOrdenDiv.innerHTML = `
+        <div class="mb-4">
+          <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Orden de Fabricación (opcional)</label>
+          <input type="text" id="salidaOrden" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="OF-2024-001">
+          <p class="text-xs mt-1" style="color: var(--color-text-secondary);">Vincular envío a orden específica</p>
+        </div>
+      `;
+    }
 
     if (ubicaciones.length === 0) {
       ubicacionesDiv.innerHTML = `
-        <div class="bg-rose-50 border-2 border-rose-200 rounded-xl p-4 text-center">
-          <p class="text-rose-700 font-medium">No se encontró stock para esta pieza</p>
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+          <p class="text-red-700 font-medium">Sin stock disponible</p>
         </div>
       `;
       return;
     }
 
     ubicacionesDiv.innerHTML = `
-      <div class="space-y-3">
-        <h3 class="font-bold text-slate-700">Ubicaciones Disponibles</h3>
+      <div class="space-y-2">
+        <h3 class="font-medium text-sm" style="color: var(--color-text);">Ubicaciones Disponibles</h3>
         ${ubicaciones.map((item, index) => `
-          <div class="bg-slate-50 border-2 border-slate-200 rounded-xl p-4">
-            <p class="font-bold text-lg text-slate-800">${item.locationQR}</p>
-            <p class="text-sm text-slate-600 mb-2">Disponible: ${item.quantity} uds</p>
+          <div class="card-minimal rounded-lg p-3">
+            <p class="font-semibold" style="color: var(--color-text);">${item.locationQR}</p>
+            <p class="text-sm mb-2" style="color: var(--color-text-secondary);">Disponible: ${item.quantity} uds</p>
             <input 
               type="number" 
               id="cantidadSalida_${index}" 
               data-ubicacion="${item.locationQR}"
               data-disponible="${item.quantity}"
-              class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-rose-400 focus:outline-none" 
-              placeholder="Cantidad a retirar"
+              class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" 
+              style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);"
+              placeholder="Cantidad"
               min="0" max="${item.quantity}">
           </div>
         `).join('')}
@@ -446,10 +816,27 @@
 
   function procesarSalida() {
     const pieza = document.getElementById('salidaPieza').value.trim();
+    
     if (!pieza) { alert('⚠️ Ingresa el código de pieza'); return; }
 
     const ubicaciones = Store.getInventory(state.store, pieza);
-    if (ubicaciones.length === 0) { alert('❌ No hay stock disponible para esta pieza'); return; }
+    if (ubicaciones.length === 0) { alert('❌ No hay stock disponible'); return; }
+
+    const ordenesPendientes = getOrdenesPendientes(pieza);
+    let ordenSalida = null;
+
+    if (ordenesPendientes.length > 0) {
+      const selectOrden = document.getElementById('salidaOrdenObligatoria');
+      ordenSalida = selectOrden ? selectOrden.value : null;
+      
+      if (!ordenSalida) {
+        alert('⚠️ Debes seleccionar una Orden de Fabricación para esta pieza');
+        return;
+      }
+    } else {
+      const inputOrden = document.getElementById('salidaOrden');
+      ordenSalida = inputOrden ? inputOrden.value.trim() : null;
+    }
 
     const picks = [];
     ubicaciones.forEach((item, index) => {
@@ -457,18 +844,29 @@
       const cantidad = parseInt(input.value) || 0;
       if (cantidad > 0) {
         if (cantidad > item.quantity) {
-          throw new Error(`En ${item.locationQR} solo hay ${item.quantity} uds disponibles`);
+          throw new Error(`En ${item.locationQR} solo hay ${item.quantity} uds`);
         }
         picks.push({ locationQR: item.locationQR, quantity: cantidad });
       }
     });
 
-    if (picks.length === 0) { alert('⚠️ Ingresa al menos una cantidad a retirar'); return; }
+    if (picks.length === 0) { alert('⚠️ Ingresa al menos una cantidad'); return; }
 
     try {
-      Store.removeStockSplit(state.store, pieza, picks);
+      Store.removeStockSplit(state.store, pieza, picks, ordenSalida);
       Store.save(state.store);
-      alert(`✅ Salida registrada correctamente\n${picks.length} ubicación(es) actualizada(s)`);
+
+      if (ordenSalida) {
+        const wo = state.store.workOrders.find(w => w.code === ordenSalida);
+        if (wo && wo.status === 'COMPLETADA') {
+          alert(`✅ Salida registrada\n\nOrden completada: ${wo.quantityShipped}/${wo.quantitySolicited} uds`);
+        } else {
+          alert(`✅ Salida registrada`);
+        }
+      } else {
+        alert(`✅ Salida registrada`);
+      }
+
       document.getElementById('salidaPieza').value = '';
       render();
     } catch (e) {
@@ -476,13 +874,88 @@
     }
   }
 
-  // ============================================================================
-  // HOOK END: SALIDA
-  // ============================================================================
+  function mostrarUbicacionesTraslado() {
+    const pieza = document.getElementById('traslado_pieza').value.trim();
+    const div = document.getElementById('traslado_ubicaciones');
 
-  // ============================================================================
-  // HOOK START: BUSCAR
-  // ============================================================================
+    if (!pieza) { div.innerHTML = ''; return; }
+
+    const ubicaciones = Store.getInventory(state.store, pieza);
+
+    if (ubicaciones.length === 0) {
+      div.innerHTML = `
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+          <p class="text-red-700 font-medium">Sin stock disponible</p>
+        </div>
+      `;
+      return;
+    }
+
+    div.innerHTML = `
+      <div class="space-y-2">
+        <h3 class="font-medium text-sm" style="color: var(--color-text);">Selecciona Origen</h3>
+        ${ubicaciones.map(item => `
+          <button onclick="seleccionarOrigenTraslado('${item.locationQR}', ${item.quantity})" 
+            class="w-full card-minimal rounded-lg p-3 text-left hover:bg-gray-50 transition">
+            <p class="font-semibold" style="color: var(--color-text);">${item.locationQR}</p>
+            <p class="text-sm" style="color: var(--color-text-secondary);">Disponible: ${item.quantity} uds</p>
+          </button>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function seleccionarOrigenTraslado(ubicacionQR, disponible) {
+    document.getElementById('traslado_origen_hidden').value = ubicacionQR;
+    document.getElementById('traslado_disponible').value = disponible;
+    
+    document.getElementById('paso1_traslado').classList.add('hidden');
+    document.getElementById('paso2_traslado').classList.remove('hidden');
+    
+    document.getElementById('info_origen').textContent = `Origen: ${ubicacionQR} (${disponible} uds)`;
+  }
+
+  function volverPaso1Traslado() {
+    document.getElementById('paso1_traslado').classList.remove('hidden');
+    document.getElementById('paso2_traslado').classList.add('hidden');
+  }
+
+  function procesarTraslado() {
+    const pieza = document.getElementById('traslado_pieza').value.trim();
+    const origenQR = document.getElementById('traslado_origen_hidden').value;
+    const destinoQR = document.getElementById('traslado_destino').value.trim();
+    const cantidad = parseInt(document.getElementById('traslado_cantidad').value);
+    const disponible = parseInt(document.getElementById('traslado_disponible').value);
+
+    if (!pieza || !origenQR || !destinoQR || !cantidad) {
+      alert('⚠️ Completa todos los campos');
+      return;
+    }
+
+    if (cantidad > disponible) {
+      alert(`⚠️ Solo hay ${disponible} unidades disponibles`);
+      return;
+    }
+
+    if (origenQR === destinoQR) {
+      alert('⚠️ Origen y destino no pueden ser iguales');
+      return;
+    }
+
+    try {
+      Store.transferStock(state.store, pieza, origenQR, destinoQR, cantidad);
+      Store.save(state.store);
+      alert(`✅ Traslado completado\n${cantidad} uds: ${origenQR} → ${destinoQR}`);
+      
+      document.getElementById('traslado_pieza').value = '';
+      document.getElementById('traslado_destino').value = '';
+      document.getElementById('traslado_cantidad').value = '';
+      volverPaso1Traslado();
+      render();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
 
   function buscarInventario() {
     const resultadosDiv = document.getElementById('resultadosBusqueda');
@@ -492,7 +965,7 @@
     else                              termino = document.getElementById('busquedaUbicacion')?.value.trim() || '';
 
     if (!termino) {
-      resultadosDiv.innerHTML = '<p class="text-slate-500 text-center py-4">Ingresa un término de búsqueda</p>';
+      resultadosDiv.innerHTML = '<p class="text-center py-4 text-sm" style="color: var(--color-text-secondary);">Ingresa un término de búsqueda</p>';
       return;
     }
 
@@ -501,31 +974,23 @@
       : Store.getInventory(state.store, undefined, termino);
 
     if (resultados.length === 0) {
-      resultadosDiv.innerHTML = '<p class="text-slate-500 text-center py-4">No se encontraron resultados</p>';
+      resultadosDiv.innerHTML = '<p class="text-center py-4 text-sm" style="color: var(--color-text-secondary);">Sin resultados</p>';
       return;
     }
 
     resultadosDiv.innerHTML = `
-      <div class="space-y-3">
+      <div class="space-y-2">
         ${resultados.map(item => `
-          <div class="bg-white border-2 border-blue-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-            <p class="font-bold text-lg text-slate-800">${item.itemCode}</p>
-            <p class="text-sm text-slate-600">Ubicación: ${item.locationQR}</p>
-            <p class="text-sm text-slate-600">Cantidad: ${item.quantity} uds</p>
-            ${item.itemDescription ? `<p class="text-sm text-slate-600">${item.itemDescription}</p>` : ''}
+          <div class="card-minimal rounded-lg p-3">
+            <p class="font-semibold" style="color: var(--color-text);">${item.itemCode}</p>
+            <p class="text-sm" style="color: var(--color-text-secondary);">Ubicación: ${item.locationQR}</p>
+            <p class="text-sm" style="color: var(--color-text-secondary);">Cantidad: ${item.quantity} uds</p>
+            ${item.itemDescription ? `<p class="text-sm" style="color: var(--color-text-secondary);">${item.itemDescription}</p>` : ''}
           </div>
         `).join('')}
       </div>
     `;
   }
-
-  // ============================================================================
-  // HOOK END: BUSCAR
-  // ============================================================================
-
-  // ============================================================================
-  // HOOK START: HISTORIAL
-  // ============================================================================
 
   function obtenerHistorial() {
     let movimientos = [...state.store.movements];
@@ -533,6 +998,7 @@
 
     if (state.historialFiltro === 'entradas') movimientos = movimientos.filter(m => m.type === 'IN');
     else if (state.historialFiltro === 'salidas') movimientos = movimientos.filter(m => m.type === 'OUT');
+    else if (state.historialFiltro === 'traslados') movimientos = movimientos.filter(m => m.type === 'TRANSFER');
 
     if (state.historialBusqueda) {
       const termino = state.historialBusqueda.toLowerCase();
@@ -546,13 +1012,46 @@
     return movimientos;
   }
 
-  // ============================================================================
-  // HOOK END: HISTORIAL
-  // ============================================================================
+  function abrirModalEditarMovimiento(movementId) {
+    const movement = state.store.movements.find(m => m.id === movementId);
+    if (!movement) return;
 
-  // ============================================================================
-  // GESTIÓN DE USUARIOS
-  // ============================================================================
+    const modal = document.getElementById('editMovementModal');
+    document.getElementById('edit_movement_id').value = movementId;
+    document.getElementById('edit_movement_quantity').value = movement.quantity;
+    document.getElementById('edit_movement_info').innerHTML = `
+      <p class="text-sm"><strong>Pieza:</strong> ${movement.itemCode}</p>
+      <p class="text-sm"><strong>Tipo:</strong> ${movement.type === 'IN' ? 'Entrada' : movement.type === 'OUT' ? 'Salida' : 'Traslado'}</p>
+      <p class="text-sm"><strong>Cantidad actual:</strong> ${movement.quantity} uds</p>
+    `;
+    modal.classList.remove('hidden');
+  }
+
+  function cerrarModalEditarMovimiento() {
+    document.getElementById('editMovementModal').classList.add('hidden');
+  }
+
+  function guardarEdicionMovimiento() {
+    const movementId = document.getElementById('edit_movement_id').value;
+    const newQuantity = parseInt(document.getElementById('edit_movement_quantity').value);
+
+    if (!newQuantity || newQuantity <= 0) {
+      alert('⚠️ Cantidad inválida');
+      return;
+    }
+
+    if (!confirm('¿Confirmas la edición?')) return;
+
+    try {
+      Store.editMovement(state.store, movementId, newQuantity, state.currentUser.username);
+      Store.save(state.store);
+      alert('✅ Movimiento editado');
+      cerrarModalEditarMovimiento();
+      render();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
 
   function agregarUsuario() {
     const username = document.getElementById('nuevoUsername').value.trim();
@@ -561,11 +1060,11 @@
     const role     = document.getElementById('nuevoRole').value;
 
     if (!username || !password || !nombre) { alert('⚠️ Completa todos los campos'); return; }
-    if (state.store.users[username])       { alert('❌ El usuario ya existe'); return; }
+    if (state.store.users[username])       { alert('❌ Usuario ya existe'); return; }
 
     state.store.users[username] = { password, role, nombre_completo: nombre };
     Store.save(state.store);
-    alert('✅ Usuario creado correctamente');
+    alert('✅ Usuario creado');
     document.getElementById('nuevoUsername').value = '';
     document.getElementById('nuevoPassword').value = '';
     document.getElementById('nuevoNombre').value  = '';
@@ -573,8 +1072,8 @@
   }
 
   function eliminarUsuario(username) {
-    if (username === 'admin') { alert('❌ No se puede eliminar el usuario admin'); return; }
-    if (confirm(`¿Eliminar usuario "${username}"?`)) {
+    if (username === 'admin') { alert('❌ No se puede eliminar admin'); return; }
+    if (confirm(`¿Eliminar "${username}"?`)) {
       delete state.store.users[username];
       Store.save(state.store);
       alert('✅ Usuario eliminado');
@@ -582,9 +1081,203 @@
     }
   }
 
-  // ============================================================================
-  // RENDERIZADO DE LA UI
-  // ============================================================================
+  function mostrarModalEnvio(workOrderCode) {
+    const wo = state.store.workOrders.find(w => w.code === workOrderCode);
+    if (!wo) return;
+
+    const stockDisponible = Store.getInventory(state.store, wo.itemCode);
+    const totalStock = stockDisponible.reduce((sum, item) => sum + item.quantity, 0);
+    const pendienteEnviar = wo.quantitySolicited - wo.quantityShipped;
+
+    if (totalStock === 0) {
+      alert('❌ Sin stock disponible');
+      return;
+    }
+
+    const modal = document.getElementById('envioModal');
+    document.getElementById('envio_wo_code').value = workOrderCode;
+    document.getElementById('envio_info').innerHTML = `
+      <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-sm">
+        <p class="font-semibold text-blue-900">Orden: ${workOrderCode}</p>
+        <p class="text-blue-700">Pieza: ${wo.itemCode}</p>
+        <p class="text-blue-700">Solicitado: ${wo.quantitySolicited} uds</p>
+        <p class="text-blue-700">Enviado: ${wo.quantityShipped} uds</p>
+        <p class="font-semibold text-blue-800">Pendiente: ${pendienteEnviar} uds</p>
+        <p class="font-semibold text-green-700">Stock: ${totalStock} uds</p>
+      </div>
+    `;
+
+    document.getElementById('envio_ubicaciones_list').innerHTML = `
+      <h3 class="font-medium text-sm mb-2" style="color: var(--color-text);">Selecciona Ubicaciones</h3>
+      ${stockDisponible.map((item, index) => `
+        <div class="card-minimal rounded-lg p-3 mb-2">
+          <p class="font-semibold" style="color: var(--color-text);">${item.locationQR}</p>
+          <p class="text-sm mb-2" style="color: var(--color-text-secondary);">Disponible: ${item.quantity} uds</p>
+          <input 
+            type="number" 
+            id="envio_cantidad_${index}" 
+            data-ubicacion="${item.locationQR}"
+            data-disponible="${item.quantity}"
+            class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 text-sm" 
+            style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);"
+            placeholder="Cantidad"
+            min="0" max="${item.quantity}">
+        </div>
+      `).join('')}
+    `;
+
+    modal.classList.remove('hidden');
+  }
+
+  function cerrarModalEnvio() {
+    document.getElementById('envioModal').classList.add('hidden');
+  }
+
+  function procesarEnvioDesdeOF() {
+    const workOrderCode = document.getElementById('envio_wo_code').value;
+    const wo = state.store.workOrders.find(w => w.code === workOrderCode);
+    if (!wo) return;
+
+    const stockDisponible = Store.getInventory(state.store, wo.itemCode);
+    const picks = [];
+
+    stockDisponible.forEach((item, index) => {
+      const input = document.getElementById(`envio_cantidad_${index}`);
+      const cantidad = parseInt(input.value) || 0;
+      if (cantidad > 0) {
+        if (cantidad > item.quantity) {
+          throw new Error(`En ${item.locationQR} solo hay ${item.quantity} uds`);
+        }
+        picks.push({ locationQR: item.locationQR, quantity: cantidad });
+      }
+    });
+
+    if (picks.length === 0) {
+      alert('⚠️ Ingresa al menos una cantidad');
+      return;
+    }
+
+    const totalEnviar = picks.reduce((sum, p) => sum + p.quantity, 0);
+    const pendienteEnviar = wo.quantitySolicited - wo.quantityShipped;
+
+    if (totalEnviar > pendienteEnviar) {
+      if (!confirm(`⚠️ Enviando ${totalEnviar} uds pero solo faltan ${pendienteEnviar} uds.\n\n¿Continuar?`)) {
+        return;
+      }
+    }
+
+    try {
+      Store.removeStockSplit(state.store, wo.itemCode, picks, workOrderCode);
+      Store.save(state.store);
+
+      const woActualizada = state.store.workOrders.find(w => w.code === workOrderCode);
+      if (woActualizada.status === 'COMPLETADA') {
+        alert(`✅ Envío registrado\n\nOrden completada`);
+      } else {
+        alert(`✅ Envío registrado: ${totalEnviar} uds`);
+      }
+
+      cerrarModalEnvio();
+      render();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+  function getEstadisticas() {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    const movimientosHoy = state.store.movements.filter(m => {
+      const fecha = new Date(m.createdAt);
+      fecha.setHours(0, 0, 0, 0);
+      return fecha.getTime() === hoy.getTime();
+    });
+
+    const entradasHoy = movimientosHoy.filter(m => m.type === 'IN').reduce((sum, m) => sum + m.quantity, 0);
+    const salidasHoy = movimientosHoy.filter(m => m.type === 'OUT').reduce((sum, m) => sum + m.quantity, 0);
+
+    const ordenesActivas = state.store.workOrders.filter(w => w.status !== 'COMPLETADA').length;
+    const ordenesUrgentes = state.store.workOrders.filter(w => {
+      if (w.status === 'COMPLETADA') return false;
+      const pendiente = w.quantitySolicited - w.quantityShipped;
+      const progreso = w.quantityProduced / w.quantitySolicited;
+      return pendiente > 0 && progreso < 0.5;
+    }).length;
+
+    const totalUbicaciones = Store.getInventory(state.store).length;
+    const totalUnidades = Store.getInventory(state.store).reduce((sum, i) => sum + i.quantity, 0);
+
+    const ultimosMovimientos = [...state.store.movements]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 5);
+
+    return {
+      entradasHoy,
+      salidasHoy,
+      ordenesActivas,
+      ordenesUrgentes,
+      totalUbicaciones,
+      totalUnidades,
+      totalMovimientos: state.store.movements.length,
+      ultimosMovimientos
+    };
+  }
+
+  function getPiezasSinOrden() {
+    const todasLasPiezas = {};
+    
+    Store.getInventory(state.store).forEach(item => {
+      if (!todasLasPiezas[item.itemCode]) {
+        todasLasPiezas[item.itemCode] = {
+          itemCode: item.itemCode,
+          totalStock: 0,
+          ubicaciones: []
+        };
+      }
+      todasLasPiezas[item.itemCode].totalStock += item.quantity;
+      todasLasPiezas[item.itemCode].ubicaciones.push({
+        locationQR: item.locationQR,
+        quantity: item.quantity
+      });
+    });
+
+    const entradasSinOrden = state.store.movements.filter(m => 
+      m.type === 'IN' && !m.workOrderCode
+    );
+
+    const piezasSinOrden = {};
+    
+    entradasSinOrden.forEach(mov => {
+      if (!piezasSinOrden[mov.itemCode]) {
+        piezasSinOrden[mov.itemCode] = {
+          itemCode: mov.itemCode,
+          totalSinOrden: 0,
+          ubicaciones: []
+        };
+      }
+      piezasSinOrden[mov.itemCode].totalSinOrden += mov.quantity;
+    });
+
+    const salidasSinOrden = state.store.movements.filter(m => 
+      m.type === 'OUT' && !m.workOrderCode
+    );
+
+    salidasSinOrden.forEach(mov => {
+      if (piezasSinOrden[mov.itemCode]) {
+        piezasSinOrden[mov.itemCode].totalSinOrden -= mov.quantity;
+      }
+    });
+
+    Object.keys(piezasSinOrden).forEach(itemCode => {
+      if (todasLasPiezas[itemCode]) {
+        piezasSinOrden[itemCode].ubicaciones = todasLasPiezas[itemCode].ubicaciones;
+        piezasSinOrden[itemCode].totalStock = todasLasPiezas[itemCode].totalStock;
+      }
+    });
+
+    return Object.values(piezasSinOrden).filter(p => p.totalSinOrden > 0);
+  }
 
   function render() {
     const app = document.getElementById('app');
@@ -595,78 +1288,243 @@
     }
 
     let content = '';
-    if (state.activeTab === 'inicio')      content = renderInicio();
-    else if (state.activeTab === 'entrada') content = renderEntrada();
-    else if (state.activeTab === 'salida')  content = renderSalida();
-    else if (state.activeTab === 'buscar')  content = renderBuscar();
+    if (state.activeTab === 'inicio')       content = renderInicio();
+    else if (state.activeTab === 'entrada')  content = renderEntrada();
+    else if (state.activeTab === 'salida')   content = renderSalida();
+    else if (state.activeTab === 'traslados') content = renderTraslados();
+    else if (state.activeTab === 'buscar')   content = renderBuscar();
+    else if (state.activeTab === 'ordenes')  content = renderOrdenes();
     else if (state.activeTab === 'historial') content = renderHistorial();
-    else if (state.activeTab === 'usuarios')  content = renderUsuarios();
+    else if (state.activeTab === 'usuarios') content = renderUsuarios();
 
     const tabs = [
-      { id: 'inicio', label: 'Inicio' },
+      { id: 'inicio', label: 'Dashboard' },
       { id: 'entrada', label: 'Entrada' },
       { id: 'salida', label: 'Salida' },
+      { id: 'traslados', label: 'Traslados' },
       { id: 'buscar', label: 'Buscar' },
+      { id: 'ordenes', label: 'Órdenes' },
       { id: 'historial', label: 'Historial' }
     ];
     if (state.currentUser.role === 'admin') tabs.push({ id: 'usuarios', label: 'Usuarios' });
 
+    const temaLabel = state.theme === 'light' ? '☀️' : state.theme === 'semi-dark' ? '🌗' : '🌙';
+
     app.innerHTML = `
-      <div class="min-h-screen pb-20">
-        <div class="sticky top-0 z-10 bg-gradient-to-r from-blue-500 to-blue-600 shadow-lg p-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-              </svg>
-              <div>
-                <h1 class="text-xl font-bold text-white">Sistema Logística v10</h1>
-                <p class="text-xs text-blue-100">${state.currentUser.username} - ${state.currentUser.nombre_completo}</p>
+      <div class="min-h-screen pb-20" style="background-color: var(--color-bg);">
+        <div class="sticky top-0 z-10 border-b shadow-sm" style="background-color: var(--color-bg-card); border-color: var(--color-border);">
+          <div class="max-w-7xl mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                  </svg>
+                </div>
+                <div>
+                  <h1 class="text-lg font-bold" style="color: var(--color-text);">Sistema Logística</h1>
+                  <p class="text-xs" style="color: var(--color-text-secondary);">${state.currentUser.nombre_completo}</p>
+                </div>
               </div>
-            </div>
-            <div class="flex gap-2">
-              <button onclick="exportarJSON()" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg transition-all backdrop-blur-sm text-sm">Exportar</button>
-              <button onclick="triggerImport()" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg transition-all backdrop-blur-sm text-sm">Importar</button>
-              <button onclick="state.isAuthenticated=false; render()" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-all backdrop-blur-sm">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-                </svg>
-              </button>
+              <div class="flex gap-2 items-center">
+                <button onclick="cambiarTema()" class="px-3 py-2 text-sm hover:bg-gray-100 rounded-lg transition" style="color: var(--color-text);" title="Cambiar tema">
+                  ${temaLabel}
+                </button>
+                <button onclick="exportarJSON()" class="px-3 py-2 text-sm hover:bg-gray-100 rounded-lg transition" style="color: var(--color-text);">Exportar</button>
+                <button onclick="triggerImport()" class="px-3 py-2 text-sm hover:bg-gray-100 rounded-lg transition" style="color: var(--color-text);">Importar</button>
+                <button onclick="state.isAuthenticated=false; render()" class="px-3 py-2 text-sm hover:bg-gray-100 rounded-lg transition" style="color: var(--color-text);">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         <div class="max-w-7xl mx-auto p-4">
-          <div class="bg-white rounded-xl shadow-md mb-4 p-2">
-            <div class="grid grid-cols-3 gap-2">
+          <div class="card-minimal rounded-lg mb-4 p-1">
+            <div class="grid grid-cols-4 gap-1">
               ${tabs.map(tab => `
                 <button onclick="state.activeTab='${tab.id}'; render()"
-                  class="py-3 px-3 rounded-lg font-medium transition-all ${state.activeTab === tab.id ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+                  class="py-2 px-2 rounded-md text-sm font-medium transition ${state.activeTab === tab.id ? 'bg-blue-600 text-white' : 'hover:bg-gray-100'}"
+                  style="${state.activeTab !== tab.id ? 'color: var(--color-text);' : ''}">
                   ${tab.label}
                 </button>
               `).join('')}
             </div>
           </div>
 
-          <div class="bg-white rounded-xl shadow-lg p-6">
+          <div class="fade-in">
             ${content}
           </div>
         </div>
       </div>
 
-      <!-- Modal Scanner -->
-      <div id="scannerModal" class="hidden fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-lg w-full max-w-md">
-          <div class="flex justify-between items-center p-4 border-b">
-            <h3 class="font-bold text-lg">Escanear Código QR</h3>
-            <button onclick="cerrarScanner()" class="text-red-600 hover:text-red-700 hover:bg-red-100 font-bold text-3xl w-10 h-10 rounded-full flex items-center justify-center">&times;</button>
+      ${renderModals()}
+    `;
+  }
+
+  function renderModals() {
+    return `
+      <div id="scannerModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onclick="if(event.target === this) cerrarScanner()">
+        <div class="rounded-lg w-full max-w-md shadow-xl" style="background-color: var(--color-bg-card);">
+          <div class="flex justify-between items-center p-4 border-b" style="border-color: var(--color-border);">
+            <h3 class="font-semibold" style="color: var(--color-text);">Escanear QR</h3>
+            <button onclick="event.stopPropagation(); cerrarScanner();" class="text-gray-400 hover:text-gray-600 text-2xl w-8 h-8 flex items-center justify-center">&times;</button>
           </div>
           <div class="p-4">
             <div id="qr-reader" class="rounded-lg overflow-hidden"></div>
-            <p class="text-sm text-gray-600 mt-4 text-center">Apunta la cámara al código QR</p>
+            <p class="text-sm mt-3 text-center" style="color: var(--color-text-secondary);">Apunta la cámara al código QR</p>
           </div>
-          <div class="p-4 border-t">
-            <button onclick="cerrarScanner()" class="w-full bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-lg font-bold transition-all">Cancelar</button>
+          <div class="p-4 border-t" style="border-color: var(--color-border);">
+            <button onclick="event.stopPropagation(); cerrarScanner();" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded-lg font-medium transition">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      ${state.showExcesoModal ? `
+        <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div class="card-minimal rounded-lg w-full max-w-md shadow-xl">
+            <div class="bg-amber-500 p-4 rounded-t-lg">
+              <h3 class="font-semibold text-white">⚠️ Exceso de Producción</h3>
+            </div>
+            <div class="p-6 space-y-4">
+              <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm space-y-1">
+                <p class="text-amber-900"><strong>Orden:</strong> ${state.excesoData.orden}</p>
+                <p class="text-amber-900"><strong>Pieza:</strong> ${state.excesoData.pieza}</p>
+                <p class="text-amber-900"><strong>Solicitado:</strong> ${state.excesoData.solicitado} uds</p>
+                <p class="text-amber-900"><strong>Ya producido:</strong> ${state.excesoData.producido} uds</p>
+                <p class="text-amber-900"><strong>Intentas agregar:</strong> ${state.excesoData.cantidad} uds</p>
+                <hr class="border-amber-300 my-2">
+                <p class="font-semibold text-amber-800"><strong>Faltan para completar:</strong> ${state.excesoData.cantidadParaCompletar} uds</p>
+                <p class="font-semibold text-red-700"><strong>Exceso:</strong> ${state.excesoData.exceso} uds</p>
+              </div>
+
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
+                <p class="font-semibold text-blue-900 mb-1">📦 Se hará lo siguiente:</p>
+                <p class="text-blue-800">1️⃣ Se cargarán <strong>${state.excesoData.cantidadParaCompletar} uds</strong> en la orden <strong>${state.excesoData.orden}</strong> para completarla</p>
+                <p class="text-blue-800 mt-1">2️⃣ Las <strong>${state.excesoData.exceso} uds</strong> restantes se cargarán donde elijas</p>
+              </div>
+
+              <p class="text-sm" style="color: var(--color-text);">¿Dónde deseas cargar las <strong>${state.excesoData.exceso} uds</strong> restantes?</p>
+
+              <div class="space-y-2">
+                <button onclick="cargarEnOtraOrden()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition">
+                  📋 Cargar en Otra Orden
+                </button>
+                <button onclick="cargarSinOrden()" class="w-full bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg font-medium transition">
+                  📦 Cargar Sin Orden
+                </button>
+                <button onclick="cerrarModalExceso()" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded-lg font-medium transition">
+                  ❌ Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
+
+      ${state.creatingWorkOrder ? `
+        <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div class="card-minimal rounded-lg w-full max-w-md shadow-xl">
+            <div class="bg-blue-600 p-4 rounded-t-lg">
+              <h3 class="font-semibold text-white">Nueva Orden de Fabricación</h3>
+            </div>
+            <div class="p-6 space-y-4">
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                <p class="text-blue-900"><strong>Código:</strong> ${state.pendingWorkOrderData.orden}</p>
+                <p class="text-blue-900"><strong>Pieza:</strong> ${state.pendingWorkOrderData.pieza}</p>
+                <p class="text-blue-900"><strong>Primera producción:</strong> ${state.pendingWorkOrderData.cantidad} uds</p>
+              </div>
+              
+              <div>
+                <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Cantidad Total Solicitada *</label>
+                <input type="number" id="of_cantidad_solicitada" 
+                  class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                  style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);"
+                  placeholder="200" min="1" value="${state.pendingWorkOrderData.cantidad}">
+              </div>
+
+              <div>
+                <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Descripción (opcional)</label>
+                <textarea id="of_descripcion" rows="2"
+                  class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
+                  style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" 
+                  placeholder="Pedido cliente..."></textarea>
+              </div>
+
+              <div class="flex gap-3">
+                <button onclick="cancelarNuevaOF()" 
+                  class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded-lg font-medium transition">
+                  Cancelar
+                </button>
+                <button onclick="crearNuevaOF()" 
+                  class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition">
+                  Crear Orden
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
+
+      <div id="editMovementModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="card-minimal rounded-lg w-full max-w-md shadow-xl">
+          <div class="bg-amber-500 p-4 rounded-t-lg">
+            <h3 class="font-semibold text-white">Editar Movimiento</h3>
+            <p class="text-sm text-amber-100">Solo administradores</p>
+          </div>
+          <div class="p-6 space-y-4">
+            <input type="hidden" id="edit_movement_id">
+            <div id="edit_movement_info" class="border rounded-lg p-3" style="background-color: var(--color-bg); color: var(--color-text); border-color: var(--color-border);"></div>
+            
+            <div>
+              <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Nueva Cantidad *</label>
+              <input type="number" id="edit_movement_quantity" 
+                class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" 
+                min="1">
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p class="text-xs text-amber-800">Esta acción modificará el inventario y quedará registrada.</p>
+            </div>
+
+            <div class="flex gap-3">
+              <button onclick="cerrarModalEditarMovimiento()" 
+                class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded-lg font-medium transition">
+                Cancelar
+              </button>
+              <button onclick="guardarEdicionMovimiento()" 
+                class="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg font-medium transition">
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="envioModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="card-minimal rounded-lg w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
+          <div class="sticky top-0 bg-green-600 p-4 rounded-t-lg">
+            <h3 class="font-semibold text-white">Enviar Stock</h3>
+          </div>
+          <div class="p-6 space-y-4">
+            <input type="hidden" id="envio_wo_code">
+            <div id="envio_info"></div>
+            <div id="envio_ubicaciones_list"></div>
+
+            <div class="flex gap-3 sticky bottom-0 pt-4 border-t" style="background-color: var(--color-bg-card); border-color: var(--color-border);">
+              <button onclick="cerrarModalEnvio()" 
+                class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded-lg font-medium transition">
+                Cancelar
+              </button>
+              <button onclick="procesarEnvioDesdeOF()" 
+                class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition">
+                Confirmar Envío
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -675,32 +1533,32 @@
 
   function renderLogin() {
     return `
-      <div class="min-h-screen bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+      <div class="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-8">
           <div class="text-center mb-8">
-            <div class="bg-gradient-to-br from-blue-100 to-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
-              <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="bg-blue-600 w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4">
+              <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
               </svg>
             </div>
-            <h1 class="text-3xl font-bold text-slate-800">Sistema Logística v10</h1>
-            <p class="text-slate-600 mt-2">Control de Inventario con QR</p>
+            <h1 class="text-2xl font-bold text-gray-900">Sistema Logística</h1>
+            <p class="text-gray-500 mt-1 text-sm">Control de Inventario Profesional</p>
           </div>
           <form onsubmit="handleLogin(event)" class="space-y-4">
             <div>
-              <label class="block text-sm font-medium text-slate-700 mb-2">Usuario</label>
-              <input type="text" id="username" class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-400 focus:outline-none transition-colors" required>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Usuario</label>
+              <input type="text" id="username" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-700 mb-2">Contraseña</label>
-              <input type="password" id="password" class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-400 focus:outline-none transition-colors" required>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+              <input type="password" id="password" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
             </div>
-            <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-4 px-6 rounded-lg transition-all shadow-md">Iniciar Sesión</button>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition">Iniciar Sesión</button>
           </form>
-          <div class="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p class="text-xs text-slate-600 text-center font-semibold mb-2">Usuarios de prueba:</p>
-            <p class="text-xs text-slate-500">Admin: admin / admin123</p>
-            <p class="text-xs text-slate-500">Operario: operario / oper123</p>
+          <div class="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <p class="text-xs text-gray-600 text-center font-medium mb-2">Usuarios de prueba:</p>
+            <p class="text-xs text-gray-500">Admin: admin / admin123</p>
+            <p class="text-xs text-gray-500">Operario: operario / oper123</p>
           </div>
         </div>
       </div>
@@ -708,138 +1566,554 @@
   }
 
   function renderInicio() {
-    const totalUbicaciones = Store.getInventory(state.store).length;
-    const totalUnidades    = Store.getInventory(state.store).reduce((sum, i) => sum + i.quantity, 0);
-    const totalMovimientos = state.store.movements.length;
+    const stats = getEstadisticas();
+    const maxUnidades = 1000;
+    const progresoUnidades = Math.min((stats.totalUnidades / maxUnidades) * 100, 100);
 
     return `
-      <h2 class="text-2xl font-bold mb-4 text-slate-800">Panel Principal</h2>
-      <div class="grid grid-cols-1 gap-4 mb-6">
+      <div class="space-y-4">
         <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white shadow-lg">
-          <p class="text-sm opacity-90">Total Ubicaciones</p>
-          <p class="text-4xl font-bold">${totalUbicaciones}</p>
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <p class="text-sm opacity-90 mb-1">Inventario Total</p>
+              <p class="text-4xl font-bold">${stats.totalUnidades}</p>
+              <p class="text-sm opacity-75">unidades en stock</p>
+            </div>
+            <div class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center">
+              <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+              </svg>
+            </div>
+          </div>
+          <div class="mt-4">
+            <div class="bg-white/30 rounded-full h-2 mb-2">
+              <div class="bg-white rounded-full h-2 transition-all" style="width: ${progresoUnidades}%"></div>
+            </div>
+            <p class="text-xs opacity-75">${stats.totalUbicaciones} ubicaciones activas</p>
+          </div>
         </div>
-        <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-6 text-white shadow-lg">
-          <p class="text-sm opacity-90">Total Unidades</p>
-          <p class="text-4xl font-bold">${totalUnidades}</p>
-        </div>
-        <div class="bg-gradient-to-br from-violet-500 to-violet-600 rounded-xl p-6 text-white shadow-lg">
-          <p class="text-sm opacity-90">Total Movimientos</p>
-          <p class="text-4xl font-bold">${totalMovimientos}</p>
-        </div>
-      </div>
 
-      <div class="grid grid-cols-2 gap-3">
-        <button onclick="state.activeTab='entrada'; render()" class="bg-white border-2 border-emerald-200 hover:border-emerald-400 rounded-xl p-4 text-left transition-all shadow-sm hover:shadow">
-          <p class="font-semibold text-slate-800">Entrada</p>
-          <p class="text-xs text-slate-500 mt-1">Agregar stock</p>
-        </button>
-        <button onclick="state.activeTab='salida'; render()" class="bg-white border-2 border-rose-200 hover:border-rose-400 rounded-xl p-4 text-left transition-all shadow-sm hover:shadow">
-          <p class="font-semibold text-slate-800">Salida</p>
-          <p class="text-xs text-slate-500 mt-1">Retirar stock</p>
-        </button>
-        <button onclick="state.activeTab='buscar'; render()" class="bg-white border-2 border-blue-200 hover:border-blue-400 rounded-xl p-4 text-left transition-all shadow-sm hover:shadow">
-          <p class="font-semibold text-slate-800">Buscar</p>
-          <p class="text-xs text-slate-500 mt-1">Consultar inventario</p>
-        </button>
-        <button onclick="state.activeTab='historial'; render()" class="bg-white border-2 border-amber-200 hover:border-amber-400 rounded-xl p-4 text-left transition-all shadow-sm hover:shadow">
-          <p class="font-semibold text-slate-800">Historial</p>
-          <p class="text-xs text-slate-500 mt-1">Ver movimientos</p>
-        </button>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="card-minimal rounded-lg p-4 border-l-4 border-amber-500">
+            <p class="text-xs font-medium mb-1" style="color: var(--color-text-secondary);">Órdenes Activas</p>
+            <p class="text-2xl font-bold" style="color: var(--color-text);">${stats.ordenesActivas}</p>
+            ${stats.ordenesUrgentes > 0 ? `<p class="text-xs text-amber-600 mt-1">${stats.ordenesUrgentes} urgentes</p>` : '<p class="text-xs mt-1" style="color: var(--color-text-secondary);">Sin urgencias</p>'}
+          </div>
+
+          <div class="card-minimal rounded-lg p-4 border-l-4 border-purple-500">
+            <p class="text-xs font-medium mb-1" style="color: var(--color-text-secondary);">Movimientos</p>
+            <p class="text-2xl font-bold" style="color: var(--color-text);">${stats.totalMovimientos}</p>
+            <p class="text-xs mt-1" style="color: var(--color-text-secondary);">Total registrados</p>
+          </div>
+
+          <div class="card-minimal rounded-lg p-4 border-l-4 border-green-500">
+            <p class="text-xs font-medium mb-1" style="color: var(--color-text-secondary);">Entradas Hoy</p>
+            <p class="text-2xl font-bold text-green-600">${stats.entradasHoy}</p>
+            <p class="text-xs mt-1" style="color: var(--color-text-secondary);">unidades</p>
+          </div>
+
+          <div class="card-minimal rounded-lg p-4 border-l-4 border-red-500">
+            <p class="text-xs font-medium mb-1" style="color: var(--color-text-secondary);">Salidas Hoy</p>
+            <p class="text-2xl font-bold text-red-600">${stats.salidasHoy}</p>
+            <p class="text-xs mt-1" style="color: var(--color-text-secondary);">unidades</p>
+          </div>
+        </div>
+
+        ${stats.ordenesUrgentes > 0 ? `
+          <div class="bg-amber-50 border-l-4 border-amber-500 rounded-lg p-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-6 h-6 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <div class="flex-1">
+                <p class="font-semibold text-amber-900 text-sm">Atención Requerida</p>
+                <p class="text-sm text-amber-700">${stats.ordenesUrgentes} orden(es) con producción baja</p>
+                <button onclick="state.activeTab='ordenes'; render()" class="mt-2 text-xs text-amber-800 font-medium hover:underline">
+                  Ver órdenes →
+                </button>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="card-minimal rounded-lg p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-sm" style="color: var(--color-text);">Actividad Reciente</h3>
+            <button onclick="state.activeTab='historial'; render()" class="text-xs text-blue-600 hover:underline">
+              Ver todo
+            </button>
+          </div>
+          ${stats.ultimosMovimientos.length === 0 ? `
+            <p class="text-sm text-center py-4" style="color: var(--color-text-secondary);">Sin movimientos recientes</p>
+          ` : `
+            <div class="space-y-2">
+              ${stats.ultimosMovimientos.map(mov => {
+                let color = 'gray';
+                let label = 'Movimiento';
+                if (mov.type === 'IN') { color = 'green'; label = 'Entrada'; }
+                else if (mov.type === 'OUT') { color = 'red'; label = 'Salida'; }
+                else if (mov.type === 'TRANSFER') { color = 'purple'; label = 'Traslado'; }
+                
+                return `
+                  <div class="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition border-l-2 border-${color}-500">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-${color}-100 text-${color}-700 text-xs font-medium rounded">${label}</span>
+                        <p class="text-sm font-medium truncate" style="color: var(--color-text);">${mov.itemCode}</p>
+                      </div>
+                      <p class="text-xs" style="color: var(--color-text-secondary);">${mov.quantity} uds • ${new Date(mov.createdAt).toLocaleTimeString('es-ES', {hour: '2-digit', minute: '2-digit'})}</p>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <button onclick="state.activeTab='entrada'; render()" class="card-minimal rounded-lg p-4 text-left hover:border-green-500 transition group">
+            <div class="w-10 h-10 bg-green-100 group-hover:bg-green-200 rounded-lg flex items-center justify-center mb-3 transition">
+              <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+            </div>
+            <p class="font-medium text-sm" style="color: var(--color-text);">Entrada</p>
+            <p class="text-xs" style="color: var(--color-text-secondary);">Agregar stock</p>
+          </button>
+          <button onclick="state.activeTab='salida'; render()" class="card-minimal rounded-lg p-4 text-left hover:border-red-500 transition group">
+            <div class="w-10 h-10 bg-red-100 group-hover:bg-red-200 rounded-lg flex items-center justify-center mb-3 transition">
+              <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+              </svg>
+            </div>
+            <p class="font-medium text-sm" style="color: var(--color-text);">Salida</p>
+            <p class="text-xs" style="color: var(--color-text-secondary);">Retirar stock</p>
+          </button>
+          <button onclick="state.activeTab='traslados'; render()" class="card-minimal rounded-lg p-4 text-left hover:border-purple-500 transition group">
+            <div class="w-10 h-10 bg-purple-100 group-hover:bg-purple-200 rounded-lg flex items-center justify-center mb-3 transition">
+              <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+              </svg>
+            </div>
+            <p class="font-medium text-sm" style="color: var(--color-text);">Traslados</p>
+            <p class="text-xs" style="color: var(--color-text-secondary);">Mover ubicaciones</p>
+          </button>
+          <button onclick="state.activeTab='ordenes'; render()" class="card-minimal rounded-lg p-4 text-left hover:border-blue-500 transition group">
+            <div class="w-10 h-10 bg-blue-100 group-hover:bg-blue-200 rounded-lg flex items-center justify-center mb-3 transition">
+              <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+              </svg>
+            </div>
+            <p class="font-medium text-sm" style="color: var(--color-text);">Órdenes</p>
+            <p class="text-xs" style="color: var(--color-text-secondary);">Gestionar OF</p>
+          </button>
+        </div>
       </div>
     `;
   }
 
   function renderEntrada() {
     return `
-      <h2 class="text-xl font-bold mb-4 text-slate-800">Entrada de Inventario</h2>
-      <div class="space-y-4">
-        <div>
-          <label class="block mb-2 font-medium text-slate-700">Código de Pieza *</label>
-          <div class="flex gap-2">
-            <input type="text" id="entradaPieza" oninput="actualizarAlertaUbicaciones()" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-400 focus:outline-none" placeholder="PIE-001">
-            <button onclick="iniciarScanner('entradaPieza')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">QR</button>
+      <div class="card-minimal rounded-lg p-6">
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--color-text);">Entrada de Inventario</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Código de Pieza *</label>
+            <div class="flex gap-2">
+              <input type="text" id="entradaPieza" oninput="actualizarAlertaUbicaciones()" class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="PIE-001">
+              <button onclick="iniciarScanner('entradaPieza')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition">QR</button>
+            </div>
           </div>
-        </div>
 
-        <div id="alertaUbicaciones"></div>
+          <div id="alertaUbicaciones"></div>
 
-        <div>
-          <label class="block mb-2 font-medium text-slate-700">Orden de Fabricación</label>
-          <div class="flex gap-2">
-            <input type="text" id="entradaOrden" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-400 focus:outline-none" placeholder="OF-2024-001">
-            <button onclick="iniciarScanner('entradaOrden')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">QR</button>
+          <div>
+            <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Orden de Fabricación</label>
+            <div class="flex gap-2">
+              <input type="text" id="entradaOrden" class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="OF-2024-001">
+              <button onclick="iniciarScanner('entradaOrden')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition">QR</button>
+            </div>
+            <p class="text-xs mt-1" style="color: var(--color-text-secondary);">Si es nueva, se pedirá cantidad solicitada. Dejar vacío para entrada sin orden.</p>
           </div>
-        </div>
 
-        <div>
-          <label class="block mb-2 font-medium text-slate-700">Ubicación *</label>
-          <div class="flex gap-2">
-            <input type="text" id="entradaUbicacion" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-400 focus:outline-none" placeholder="M1-F3-C5">
-            <button onclick="iniciarScanner('entradaUbicacion')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">QR</button>
+          <div>
+            <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Ubicación *</label>
+            <div class="flex gap-2">
+              <input type="text" id="entradaUbicacion" class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="M1-F3-C5">
+              <button onclick="iniciarScanner('entradaUbicacion')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition">QR</button>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label class="block mb-2 font-medium text-slate-700">Cantidad *</label>
-          <input type="number" id="entradaCantidad" class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-400 focus:outline-none" min="1" placeholder="1">
-        </div>
+          <div>
+            <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Cantidad *</label>
+            <input type="number" id="entradaCantidad" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" min="1" placeholder="1">
+          </div>
 
-        <button onclick="procesarEntrada()" class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white py-4 rounded-lg font-bold text-lg shadow-md">Registrar Entrada</button>
+          <button onclick="procesarEntrada()" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-medium transition">Registrar Entrada</button>
+        </div>
       </div>
     `;
   }
 
   function renderSalida() {
     return `
-      <h2 class="text-xl font-bold mb-4 text-slate-800">Salida de Inventario</h2>
-      <div class="space-y-4">
-        <div>
-          <label class="block mb-2 font-medium text-slate-700">Código de Pieza *</label>
-          <div class="flex gap-2">
-            <input type="text" id="salidaPieza" oninput="mostrarUbicacionesDisponibles()" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-rose-400 focus:outline-none" placeholder="PIE-001">
-            <button onclick="iniciarScanner('salidaPieza')" class="bg-rose-500 hover:bg-rose-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">QR</button>
+      <div class="card-minimal rounded-lg p-6">
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--color-text);">Salida de Inventario</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Código de Pieza *</label>
+            <div class="flex gap-2">
+              <input type="text" id="salidaPieza" oninput="mostrarUbicacionesDisponibles()" class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="PIE-001">
+              <button onclick="iniciarScanner('salidaPieza')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition">QR</button>
+            </div>
           </div>
+
+          <div id="selectorOrden"></div>
+
+          <div id="ubicacionesDisponibles"></div>
+
+          <button onclick="procesarSalida()" class="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium transition">Confirmar Salida</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTraslados() {
+    return `
+      <div class="card-minimal rounded-lg p-6">
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--color-text);">Traslados entre Ubicaciones</h2>
+        
+        <div id="paso1_traslado" class="space-y-4">
+          <div>
+            <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Código de Pieza *</label>
+            <div class="flex gap-2">
+              <input type="text" id="traslado_pieza" oninput="mostrarUbicacionesTraslado()" class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="PIE-001">
+              <button onclick="iniciarScanner('traslado_pieza')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition">QR</button>
+            </div>
+          </div>
+
+          <div id="traslado_ubicaciones"></div>
         </div>
 
-        <div id="ubicacionesDisponibles"></div>
+        <div id="paso2_traslado" class="hidden space-y-4">
+          <div class="bg-purple-50 border border-purple-200 rounded-lg p-3">
+            <p id="info_origen" class="text-sm font-medium text-purple-900"></p>
+          </div>
 
-        <button onclick="procesarSalida()" class="w-full bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white py-4 rounded-lg font-bold text-lg shadow-md">Confirmar Salida</button>
+          <input type="hidden" id="traslado_origen_hidden">
+          <input type="hidden" id="traslado_disponible">
+
+          <div>
+            <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Ubicación Destino *</label>
+            <div class="flex gap-2">
+              <input type="text" id="traslado_destino" class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="M1-F5-C3">
+              <button onclick="iniciarScanner('traslado_destino')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition">QR</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Cantidad *</label>
+            <input type="number" id="traslado_cantidad" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" min="1" placeholder="1">
+          </div>
+
+          <div class="flex gap-3">
+            <button onclick="volverPaso1Traslado()" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded-lg font-medium transition">
+              Volver
+            </button>
+            <button onclick="procesarTraslado()" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-medium transition">
+              Confirmar
+            </button>
+          </div>
+        </div>
       </div>
     `;
   }
 
   function renderBuscar() {
     return `
-      <h2 class="text-xl font-bold mb-4 text-slate-800">Buscar en Inventario</h2>
+      <div class="card-minimal rounded-lg p-6">
+        <h2 class="text-lg font-semibold mb-4" style="color: var(--color-text);">Buscar en Inventario</h2>
 
-      <div class="mb-4 flex gap-2">
-        <button onclick="state.buscarPor='pieza'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.buscarPor === 'pieza' ? 'bg-blue-500 text-white shadow-md' : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300'}">Por Código de Pieza</button>
-        <button onclick="state.buscarPor='ubicacion'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.buscarPor === 'ubicacion' ? 'bg-blue-500 text-white shadow-md' : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300'}">Por Ubicación</button>
-      </div>
+        <div class="mb-4 flex gap-2">
+          <button onclick="state.buscarPor='pieza'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium text-sm transition ${state.buscarPor === 'pieza' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}" style="${state.buscarPor !== 'pieza' ? 'color: var(--color-text);' : ''}">Por Pieza</button>
+          <button onclick="state.buscarPor='ubicacion'; render()" class="flex-1 py-2 px-4 rounded-lg font-medium text-sm transition ${state.buscarPor === 'ubicacion' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}" style="${state.buscarPor !== 'ubicacion' ? 'color: var(--color-text);' : ''}">Por Ubicación</button>
+        </div>
 
-      <div class="space-y-4">
-        ${state.buscarPor === 'pieza' ? `
-          <div>
-            <label class="block mb-2 font-medium text-slate-700">Código de Pieza</label>
-            <div class="flex gap-2">
-              <input type="text" id="busquedaPieza" oninput="buscarInventario()" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-400 focus:outline-none" placeholder="PIE-001">
-              <button onclick="iniciarScanner('busquedaPieza')" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">QR</button>
+        <div class="space-y-4">
+          ${state.buscarPor === 'pieza' ? `
+            <div>
+              <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Código de Pieza</label>
+              <div class="flex gap-2">
+                <input type="text" id="busquedaPieza" oninput="buscarInventario()" class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="PIE-001">
+                <button onclick="iniciarScanner('busquedaPieza')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition">QR</button>
+              </div>
             </div>
+          ` : `
+            <div>
+              <label class="block mb-2 font-medium text-sm" style="color: var(--color-text);">Ubicación</label>
+              <div class="flex gap-2">
+                <input type="text" id="busquedaUbicacion" oninput="buscarInventario()" class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="M1-F3-C5">
+                <button onclick="iniciarScanner('busquedaUbicacion')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition">QR</button>
+              </div>
+            </div>
+          `}
+
+          <div id="resultadosBusqueda" class="mt-4">
+            <p class="text-center py-4 text-sm" style="color: var(--color-text-secondary);">Ingresa un término de búsqueda</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderOrdenes() {
+    let ordenes = [...state.store.workOrders];
+    
+    if (state.ordenesSearchTerm) {
+      const termino = state.ordenesSearchTerm.toLowerCase();
+      ordenes = ordenes.filter(wo => 
+        wo.code.toLowerCase().includes(termino) ||
+        wo.itemCode.toLowerCase().includes(termino) ||
+        (wo.description && wo.description.toLowerCase().includes(termino))
+      );
+    }
+
+    if (state.ordenesFilter === 'activas') {
+      ordenes = ordenes.filter(wo => wo.status === 'PENDIENTE');
+    } else if (state.ordenesFilter === 'pendientes') {
+      ordenes = ordenes.filter(wo => wo.status === 'ENVIO_PARCIAL');
+    } else if (state.ordenesFilter === 'prod_completa') {
+      ordenes = ordenes.filter(wo => wo.status === 'PRODUCCION_COMPLETA');
+    } else if (state.ordenesFilter === 'completadas') {
+      ordenes = ordenes.filter(wo => wo.status === 'COMPLETADA');
+    } else if (state.ordenesFilter === 'sin_orden') {
+      return renderPiezasSinOrden();
+    }
+
+    ordenes.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const getStatusColor = (status) => {
+      switch(status) {
+        case 'PENDIENTE': return 'border-l-amber-500 bg-amber-50';
+        case 'PRODUCCION_COMPLETA': return 'border-l-blue-500 bg-blue-50';
+        case 'ENVIO_PARCIAL': return 'border-l-orange-500 bg-orange-50';
+        case 'COMPLETADA': return 'border-l-green-500 bg-green-50';
+        default: return 'border-l-gray-500 bg-gray-50';
+      }
+    };
+
+    const getStatusBadge = (status) => {
+      switch(status) {
+        case 'PENDIENTE': return 'bg-amber-100 text-amber-800';
+        case 'PRODUCCION_COMPLETA': return 'bg-blue-100 text-blue-800';
+        case 'ENVIO_PARCIAL': return 'bg-orange-100 text-orange-800';
+        case 'COMPLETADA': return 'bg-green-100 text-green-800';
+        default: return 'bg-gray-100 text-gray-800';
+      }
+    };
+
+    const getStatusText = (status) => {
+      switch(status) {
+        case 'PENDIENTE': return 'Pendiente';
+        case 'PRODUCCION_COMPLETA': return 'Prod. Completa';
+        case 'ENVIO_PARCIAL': return 'Envío Parcial';
+        case 'COMPLETADA': return 'Completada';
+        default: return status;
+      }
+    };
+
+    const getStockDisponible = (itemCode) => {
+      const stock = Store.getInventory(state.store, itemCode);
+      return stock.reduce((sum, item) => sum + item.quantity, 0);
+    };
+
+    const totalActivas = state.store.workOrders.filter(wo => wo.status === 'PENDIENTE').length;
+    const totalPendientes = state.store.workOrders.filter(wo => wo.status === 'ENVIO_PARCIAL').length;
+    const totalProdCompleta = state.store.workOrders.filter(wo => wo.status === 'PRODUCCION_COMPLETA').length;
+    const totalCompletadas = state.store.workOrders.filter(wo => wo.status === 'COMPLETADA').length;
+    const piezasSinOrden = getPiezasSinOrden();
+
+    return `
+      <div class="space-y-4">
+        <div class="card-minimal rounded-lg p-1 overflow-x-auto">
+          <div class="flex gap-1 min-w-max">
+            <button onclick="state.ordenesFilter='activas'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap ${state.ordenesFilter === 'activas' ? 'bg-amber-500 text-white' : 'hover:bg-gray-100'}" style="${state.ordenesFilter !== 'activas' ? 'color: var(--color-text);' : ''}">
+              Activas (${totalActivas})
+            </button>
+            <button onclick="state.ordenesFilter='pendientes'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap ${state.ordenesFilter === 'pendientes' ? 'bg-orange-500 text-white' : 'hover:bg-gray-100'}" style="${state.ordenesFilter !== 'pendientes' ? 'color: var(--color-text);' : ''}">
+              Pendientes (${totalPendientes})
+            </button>
+            <button onclick="state.ordenesFilter='prod_completa'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap ${state.ordenesFilter === 'prod_completa' ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'}" style="${state.ordenesFilter !== 'prod_completa' ? 'color: var(--color-text);' : ''}">
+              Prod. Completa (${totalProdCompleta})
+            </button>
+            <button onclick="state.ordenesFilter='completadas'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap ${state.ordenesFilter === 'completadas' ? 'bg-green-600 text-white' : 'hover:bg-gray-100'}" style="${state.ordenesFilter !== 'completadas' ? 'color: var(--color-text);' : ''}">
+              Completadas (${totalCompletadas})
+            </button>
+            <button onclick="state.ordenesFilter='sin_orden'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap ${state.ordenesFilter === 'sin_orden' ? 'bg-gray-600 text-white' : 'hover:bg-gray-100'}" style="${state.ordenesFilter !== 'sin_orden' ? 'color: var(--color-text);' : ''}">
+              Sin Orden (${piezasSinOrden.length})
+            </button>
+          </div>
+        </div>
+
+        <div class="card-minimal rounded-lg p-4">
+          <input 
+            type="text" 
+            value="${state.ordenesSearchTerm}"
+            oninput="state.ordenesSearchTerm = this.value; render()"
+            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" 
+            placeholder="Buscar por código de orden, pieza o descripción...">
+        </div>
+
+        ${ordenes.length === 0 ? `
+          <div class="card-minimal rounded-lg p-8 text-center">
+            <p class="text-sm" style="color: var(--color-text-secondary);">${state.ordenesSearchTerm ? 'No se encontraron resultados' : 'No hay órdenes en esta categoría'}</p>
           </div>
         ` : `
-          <div>
-            <label class="block mb-2 font-medium text-slate-700">Ubicación</label>
-            <div class="flex gap-2">
-              <input type="text" id="busquedaUbicacion" oninput="buscarInventario()" class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-400 focus:outline-none" placeholder="M1-F3-C5">
-              <button onclick="iniciarScanner('busquedaUbicacion')" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-bold shadow-sm">QR</button>
-            </div>
+          <div class="text-xs mb-2" style="color: var(--color-text-secondary);">${ordenes.length} orden(es)</div>
+          <div class="space-y-3">
+            ${ordenes.map(wo => {
+              const pendienteProducir = wo.quantitySolicited - wo.quantityProduced;
+              const pendienteEnviar = wo.quantitySolicited - wo.quantityShipped;
+              const progresoProduccion = (wo.quantityProduced / wo.quantitySolicited * 100).toFixed(0);
+              const progresoEnvio = (wo.quantityShipped / wo.quantitySolicited * 100).toFixed(0);
+              const stockDisponible = getStockDisponible(wo.itemCode);
+
+              return `
+                <div class="card-minimal border-l-4 ${getStatusColor(wo.status)} rounded-lg p-4">
+                  <div class="flex justify-between items-start mb-3">
+                    <div class="flex-1">
+                      <p class="font-semibold" style="color: var(--color-text);">${wo.code}</p>
+                      <p class="text-sm" style="color: var(--color-text-secondary);">Pieza: <strong>${wo.itemCode}</strong></p>
+                      ${wo.description ? `<p class="text-xs italic mt-1" style="color: var(--color-text-secondary);">${wo.description}</p>` : ''}
+                    </div>
+                    <span class="px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(wo.status)}">
+                      ${getStatusText(wo.status)}
+                    </span>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2 mb-3">
+                    <div class="bg-white/70 rounded-md p-2" style="background-color: var(--color-bg);">
+                      <p class="text-xs mb-1" style="color: var(--color-text-secondary);">Producción</p>
+                      <div class="flex items-center gap-2 mb-1">
+                        <div class="flex-1 bg-gray-200 rounded-full h-1.5">
+                          <div class="bg-blue-500 h-1.5 rounded-full transition-all" style="width: ${progresoProduccion}%"></div>
+                        </div>
+                        <p class="text-xs font-semibold" style="color: var(--color-text);">${progresoProduccion}%</p>
+                      </div>
+                      <p class="text-xs" style="color: var(--color-text);">
+                        <strong>${wo.quantityProduced}</strong> / ${wo.quantitySolicited}
+                        ${pendienteProducir > 0 ? `<span class="text-amber-600">(- ${pendienteProducir})</span>` : ''}
+                      </p>
+                    </div>
+
+                    <div class="bg-white/70 rounded-md p-2" style="background-color: var(--color-bg);">
+                      <p class="text-xs mb-1" style="color: var(--color-text-secondary);">Envío</p>
+                      <div class="flex items-center gap-2 mb-1">
+                        <div class="flex-1 bg-gray-200 rounded-full h-1.5">
+                          <div class="bg-green-500 h-1.5 rounded-full transition-all" style="width: ${progresoEnvio}%"></div>
+                        </div>
+                        <p class="text-xs font-semibold" style="color: var(--color-text);">${progresoEnvio}%</p>
+                      </div>
+                      <p class="text-xs" style="color: var(--color-text);">
+                        <strong>${wo.quantityShipped}</strong> / ${wo.quantitySolicited}
+                        ${pendienteEnviar > 0 ? `<span class="text-red-600">(- ${pendienteEnviar})</span>` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="bg-white/70 rounded-md p-2 mb-3" style="background-color: var(--color-bg);">
+                    <p class="text-xs" style="color: var(--color-text-secondary);">Stock Disponible</p>
+                    <p class="text-base font-semibold ${stockDisponible > 0 ? 'text-green-700' : ''}" style="color: ${stockDisponible > 0 ? '' : 'var(--color-text-secondary)'};">${stockDisponible} uds</p>
+                  </div>
+
+                  ${wo.status !== 'COMPLETADA' && stockDisponible > 0 ? `
+                    <button onclick="mostrarModalEnvio('${wo.code}')" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium text-sm transition">
+                      Enviar Stock
+                    </button>
+                  ` : wo.status === 'COMPLETADA' ? `
+                    <div class="w-full bg-green-100 text-green-700 py-2 rounded-lg font-medium text-center text-sm">
+                      Orden Completada
+                    </div>
+                  ` : `
+                    <div class="w-full bg-gray-100 py-2 rounded-lg font-medium text-center text-sm" style="color: var(--color-text-secondary);">
+                      Sin stock disponible
+                    </div>
+                  `}
+
+                  <p class="text-xs mt-2" style="color: var(--color-text-secondary);">Creada: ${new Date(wo.createdAt).toLocaleString('es-ES')} | ${wo.createdBy}</p>
+                </div>
+              `;
+            }).join('')}
           </div>
         `}
+      </div>
+    `;
+  }
 
-        <div id="resultadosBusqueda" class="mt-4">
-          <p class="text-slate-500 text-center py-4">Ingresa un término de búsqueda</p>
+  function renderPiezasSinOrden() {
+    const piezasSinOrden = getPiezasSinOrden();
+    const totalActivas = state.store.workOrders.filter(wo => wo.status === 'PENDIENTE').length;
+    const totalPendientes = state.store.workOrders.filter(wo => wo.status === 'ENVIO_PARCIAL').length;
+    const totalProdCompleta = state.store.workOrders.filter(wo => wo.status === 'PRODUCCION_COMPLETA').length;
+    const totalCompletadas = state.store.workOrders.filter(wo => wo.status === 'COMPLETADA').length;
+
+    return `
+      <div class="space-y-4">
+        <div class="card-minimal rounded-lg p-1 overflow-x-auto">
+          <div class="flex gap-1 min-w-max">
+            <button onclick="state.ordenesFilter='activas'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap hover:bg-gray-100" style="color: var(--color-text);">
+              Activas (${totalActivas})
+            </button>
+            <button onclick="state.ordenesFilter='pendientes'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap hover:bg-gray-100" style="color: var(--color-text);">
+              Pendientes (${totalPendientes})
+            </button>
+            <button onclick="state.ordenesFilter='prod_completa'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap hover:bg-gray-100" style="color: var(--color-text);">
+              Prod. Completa (${totalProdCompleta})
+            </button>
+            <button onclick="state.ordenesFilter='completadas'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap hover:bg-gray-100" style="color: var(--color-text);">
+              Completadas (${totalCompletadas})
+            </button>
+            <button onclick="state.ordenesFilter='sin_orden'; render()" class="py-2 px-3 rounded-lg font-medium text-xs transition whitespace-nowrap bg-gray-600 text-white">
+              Sin Orden (${piezasSinOrden.length})
+            </button>
+          </div>
         </div>
+
+        <div class="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4">
+          <p class="font-semibold text-blue-900 text-sm mb-1">Piezas Sin Orden de Fabricación</p>
+          <p class="text-xs text-blue-700">Stock disponible que no está vinculado a ninguna orden</p>
+        </div>
+
+        ${piezasSinOrden.length === 0 ? `
+          <div class="card-minimal rounded-lg p-8 text-center">
+            <p class="text-sm" style="color: var(--color-text-secondary);">No hay piezas sin orden</p>
+          </div>
+        ` : `
+          <div class="text-xs mb-2" style="color: var(--color-text-secondary);">${piezasSinOrden.length} pieza(s)</div>
+          <div class="space-y-3">
+            ${piezasSinOrden.map(pieza => `
+              <div class="card-minimal border-l-4 border-gray-500 rounded-lg p-4">
+                <div class="mb-3">
+                  <p class="font-semibold" style="color: var(--color-text);">${pieza.itemCode}</p>
+                  <p class="text-sm" style="color: var(--color-text-secondary);">Sin orden asignada</p>
+                </div>
+
+                <div class="bg-white/70 rounded-md p-2 mb-3" style="background-color: var(--color-bg);">
+                  <p class="text-xs" style="color: var(--color-text-secondary);">Stock Total Sin Orden</p>
+                  <p class="text-xl font-bold text-gray-700">${pieza.totalSinOrden} uds</p>
+                </div>
+
+                <div class="bg-white/70 rounded-md p-2" style="background-color: var(--color-bg);">
+                  <p class="text-xs mb-2" style="color: var(--color-text-secondary);">Ubicaciones:</p>
+                  ${pieza.ubicaciones.map(ub => `
+                    <p class="text-xs" style="color: var(--color-text);">${ub.locationQR}: ${ub.quantity} uds</p>
+                  `).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
       </div>
     `;
   }
@@ -848,34 +2122,79 @@
     const movimientos = obtenerHistorial();
 
     return `
-      <h2 class="text-xl font-bold mb-4 text-slate-800">Historial de Movimientos</h2>
+      <div class="space-y-4">
+        <div class="card-minimal rounded-lg p-4">
+          <input type="text"
+            value="${state.historialBusqueda}"
+            oninput="state.historialBusqueda = this.value; render()"
+            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm mb-3"
+            style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);"
+            placeholder="Buscar en historial...">
 
-      <div class="mb-4">
-        <input type="text"
-          value="${state.historialBusqueda}"
-          oninput="state.historialBusqueda = this.value; render()"
-          class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-amber-400 focus:outline-none mb-3"
-          placeholder="Buscar en historial...">
-
-        <div class="flex gap-2">
-          <button onclick="state.historialFiltro='general'; render()"   class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.historialFiltro === 'general'  ? 'bg-amber-500 text-white shadow-md'  : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-amber-300'}">General</button>
-          <button onclick="state.historialFiltro='entradas'; render()"  class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.historialFiltro === 'entradas' ? 'bg-emerald-500 text-white shadow-md': 'bg-white border-2 border-slate-200 text-slate-700 hover:border-emerald-300'}">Entradas</button>
-          <button onclick="state.historialFiltro='salidas'; render()"   class="flex-1 py-2 px-4 rounded-lg font-medium transition-all ${state.historialFiltro === 'salidas'  ? 'bg-rose-500 text-white shadow-md'   : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-rose-300'}">Salidas</button>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="state.historialFiltro='general'; render()" class="py-2 px-3 rounded-lg font-medium text-sm transition ${state.historialFiltro === 'general' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}" style="${state.historialFiltro !== 'general' ? 'color: var(--color-text);' : ''}">Todos</button>
+            <button onclick="state.historialFiltro='entradas'; render()" class="py-2 px-3 rounded-lg font-medium text-sm transition ${state.historialFiltro === 'entradas' ? 'bg-green-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}" style="${state.historialFiltro !== 'entradas' ? 'color: var(--color-text);' : ''}">Entradas</button>
+            <button onclick="state.historialFiltro='salidas'; render()" class="py-2 px-3 rounded-lg font-medium text-sm transition ${state.historialFiltro === 'salidas' ? 'bg-red-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}" style="${state.historialFiltro !== 'salidas' ? 'color: var(--color-text);' : ''}">Salidas</button>
+            <button onclick="state.historialFiltro='traslados'; render()" class="py-2 px-3 rounded-lg font-medium text-sm transition ${state.historialFiltro === 'traslados' ? 'bg-purple-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}" style="${state.historialFiltro !== 'traslados' ? 'color: var(--color-text);' : ''}">Traslados</button>
+          </div>
         </div>
-      </div>
 
-      <div class="mt-4">
         ${movimientos.length === 0 ? 
-          '<div class="bg-slate-50 border-2 border-slate-200 rounded-lg p-6 text-center"><p class="text-slate-600">No hay movimientos para mostrar</p></div>' 
+          `<div class="card-minimal rounded-lg p-6 text-center"><p class="text-sm" style="color: var(--color-text-secondary);">Sin movimientos</p></div>` 
           : 
-          '<div class="space-y-3">' + movimientos.map(mov => `
-            <div class="border-l-4 ${mov.type === 'IN' ? 'border-emerald-500 bg-emerald-50' : 'border-rose-500 bg-rose-50'} rounded-lg p-4 shadow-sm">
-              <p class="font-bold text-slate-800">${mov.type === 'IN' ? 'ENTRADA' : 'SALIDA'} - ${mov.itemCode}</p>
-              <p class="text-sm text-slate-600">${mov.type === 'IN' ? mov.toLocationQR : mov.fromLocationQR} | ${mov.quantity} uds</p>
-              ${mov.workOrderCode ? '<p class="text-sm text-slate-600">OF: ' + mov.workOrderCode + '</p>' : ''}
-              <p class="text-xs text-slate-500 mt-1">${new Date(mov.createdAt).toLocaleString('es-ES')} | ${mov.createdBy || 'unknown'}</p>
-            </div>
-          `).join('') + '</div>'
+          '<div class="space-y-2">' + movimientos.map(mov => {
+            let borderColor = 'border-gray-300';
+            let bgColor = 'bg-white';
+            let tipoText = 'MOVIMIENTO';
+            let badgeColor = 'bg-gray-100 text-gray-700';
+
+            if (mov.type === 'IN') {
+              borderColor = 'border-green-200';
+              bgColor = 'bg-green-50';
+              tipoText = 'ENTRADA';
+              badgeColor = 'bg-green-100 text-green-700';
+            } else if (mov.type === 'OUT') {
+              borderColor = 'border-red-200';
+              bgColor = 'bg-red-50';
+              tipoText = 'SALIDA';
+              badgeColor = 'bg-red-100 text-red-700';
+            } else if (mov.type === 'TRANSFER') {
+              borderColor = 'border-purple-200';
+              bgColor = 'bg-purple-50';
+              tipoText = 'TRASLADO';
+              badgeColor = 'bg-purple-100 text-purple-700';
+            }
+
+            return `
+              <div class="card-minimal border-l-4 ${borderColor} ${bgColor} rounded-lg p-3 ${mov.edited ? 'ring-2 ring-amber-300' : ''}">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="px-2 py-0.5 ${badgeColor} text-xs font-medium rounded">${tipoText}</span>
+                      <p class="font-semibold text-sm" style="color: var(--color-text);">${mov.itemCode}</p>
+                    </div>
+                    ${mov.type === 'IN' ? 
+                      `<p class="text-xs" style="color: var(--color-text-secondary);">→ ${mov.toLocationQR} | ${mov.quantity} uds</p>` 
+                      : mov.type === 'OUT' ?
+                      `<p class="text-xs" style="color: var(--color-text-secondary);">${mov.fromLocationQR} → | ${mov.quantity} uds</p>`
+                      :
+                      `<p class="text-xs" style="color: var(--color-text-secondary);">${mov.fromLocationQR} → ${mov.toLocationQR} | ${mov.quantity} uds</p>`
+                    }
+                    ${mov.workOrderCode ? `<p class="text-xs text-blue-700 font-medium">OF: ${mov.workOrderCode}</p>` : '<p class="text-xs text-gray-500 font-medium">Sin orden</p>'}
+                    <p class="text-xs mt-1" style="color: var(--color-text-secondary);">${new Date(mov.createdAt).toLocaleString('es-ES')} | ${mov.createdBy}</p>
+                    ${mov.edited ? `<p class="text-xs text-amber-700 font-semibold mt-1">Editado por ${mov.editedBy}</p>` : ''}
+                  </div>
+                  ${state.currentUser.role === 'admin' ? `
+                    <button onclick="abrirModalEditarMovimiento('${mov.id}')" class="bg-amber-500 hover:bg-amber-600 text-white p-2 rounded-lg transition ml-2">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                      </svg>
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join('') + '</div>'
         }
       </div>
     `;
@@ -888,45 +2207,44 @@
     }));
     
     return `
-      <h2 class="text-xl font-bold mb-4 text-slate-800">Gestión de Usuarios</h2>
-      
-      <div class="bg-gradient-to-br from-violet-50 to-indigo-50 border-2 border-violet-200 rounded-xl p-4 mb-4">
-        <h3 class="font-bold mb-3 text-slate-800">Agregar Nuevo Usuario</h3>
-        <div class="space-y-3">
-          <input type="text" id="nuevoUsername" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Usuario">
-          <input type="password" id="nuevoPassword" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Contraseña">
-          <input type="text" id="nuevoNombre" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none" placeholder="Nombre Completo">
-          <select id="nuevoRole" class="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:border-violet-400 focus:outline-none">
-            <option value="user">Usuario</option>
-            <option value="admin">Administrador</option>
-          </select>
-          <button onclick="agregarUsuario()" class="w-full bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-600 hover:to-indigo-700 text-white py-3 rounded-lg font-bold shadow-md">
-            Crear Usuario
-          </button>
-        </div>
-      </div>
-
-      <h3 class="font-bold mb-3 text-slate-800">Usuarios Existentes</h3>
-      <div class="space-y-2">
-        ${userList.map(user => `
-          <div class="bg-white border-2 border-slate-200 rounded-xl p-4 flex justify-between items-center shadow-sm">
-            <div>
-              <p class="font-bold text-slate-800">${user.username}</p>
-              <p class="text-sm text-slate-600">${user.nombre_completo}</p>
-              <p class="text-xs text-slate-500">${user.role === 'admin' ? 'Administrador' : 'Usuario'}</p>
-            </div>
-            ${user.username !== 'admin' ? `
-              <button onclick="eliminarUsuario('${user.username}')" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg shadow-sm">
-                Eliminar
-              </button>
-            ` : '<span class="text-slate-400 text-sm">Protegido</span>'}
+      <div class="space-y-4">
+        <div class="card-minimal rounded-lg p-4">
+          <h3 class="font-semibold mb-3 text-sm" style="color: var(--color-text);">Agregar Nuevo Usuario</h3>
+          <div class="space-y-3">
+            <input type="text" id="nuevoUsername" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="Usuario">
+            <input type="password" id="nuevoPassword" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="Contraseña">
+            <input type="text" id="nuevoNombre" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);" placeholder="Nombre Completo">
+            <select id="nuevoRole" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" style="background-color: var(--color-bg-card); color: var(--color-text); border-color: var(--color-border);">
+              <option value="user">Usuario</option>
+              <option value="admin">Administrador</option>
+            </select>
+            <button onclick="agregarUsuario()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium text-sm transition">
+              Crear Usuario
+            </button>
           </div>
-        `).join('')}
+        </div>
+
+        <h3 class="font-semibold text-sm" style="color: var(--color-text);">Usuarios Existentes</h3>
+        <div class="space-y-2">
+          ${userList.map(user => `
+            <div class="card-minimal rounded-lg p-3 flex justify-between items-center">
+              <div>
+                <p class="font-semibold text-sm" style="color: var(--color-text);">${user.username}</p>
+                <p class="text-xs" style="color: var(--color-text-secondary);">${user.nombre_completo}</p>
+                <p class="text-xs" style="color: var(--color-text-secondary);">${user.role === 'admin' ? 'Administrador' : 'Usuario'}</p>
+              </div>
+              ${user.username !== 'admin' ? `
+                <button onclick="eliminarUsuario('${user.username}')" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm transition">
+                  Eliminar
+                </button>
+              ` : `<span class="text-xs" style="color: var(--color-text-secondary);">Protegido</span>`}
+            </div>
+          `).join('')}
+        </div>
       </div>
     `;
   }
 
-  // Inicializar
   render();
   </script>
 </body>
