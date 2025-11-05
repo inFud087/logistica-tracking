@@ -1420,10 +1420,6 @@ function showLoader() {
         (decodedText) => {
           
           let targetInputId = currentInputId; 
-          
-          if (currentInputId === 'entradaPieza' && !decodedText.toLowerCase().startsWith('pie')) {
-            targetInputId = 'entradaOrden'; 
-          }
 
           const input = document.getElementById(targetInputId);
           if (input) {
